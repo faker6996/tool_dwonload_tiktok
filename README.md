@@ -56,10 +56,10 @@ You can package the application into a standalone executable using `pyinstaller`
 2.  **Build the App**:
 
     ```bash
-    # For Mac/Linux (Use colon :)
+    # For Mac/Linux (Run this on Mac/Linux)
     pyinstaller --name "VideoDownloader" --windowed --onedir --icon "app_icon.png" --add-data "src:src" main.py
 
-    # For Windows (Use semicolon ;)
+    # For Windows (Run this ON WINDOWS only)
     # pyinstaller --name "VideoDownloader_Win" --windowed --onedir --icon "app_icon.png" --add-data "src;src" main.py
     ```
 
