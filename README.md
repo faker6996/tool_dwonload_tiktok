@@ -42,3 +42,28 @@ python main.py
 - `src/core`: Core logic (downloader, platform detection).
 - `src/ui`: User interface (PyQt6).
 - `src/utils`: Helper functions.
+
+## Build App (Executable)
+
+You can package the application into a standalone executable using `pyinstaller`.
+
+1.  **Install PyInstaller**:
+
+    ```bash
+    pip install pyinstaller
+    ```
+
+2.  **Build the App**:
+
+    ```bash
+    # For Mac/Linux (Use colon :)
+    pyinstaller --name "VideoDownloader" --windowed --onedir --icon "app_icon.png" --add-data "src:src" main.py
+
+    # For Windows (Use semicolon ;)
+    # pyinstaller --name "VideoDownloader_Win" --windowed --onedir --icon "app_icon.png" --add-data "src;src" main.py
+    ```
+
+3.  **Run**:
+    The executable will be in the `dist/VideoDownloader` folder.
+
+    _Note: The built app still requires Playwright browsers. On a new machine, you may need to run the app from a terminal first to see the "playwright install" prompt or bundle the browsers (advanced)._

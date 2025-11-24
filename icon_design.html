@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <style>
+      body {
+        margin: 0;
+        padding: 0;
+        background: transparent;
+      }
+      svg {
+        width: 1024px;
+        height: 1024px;
+      }
+    </style>
+  </head>
+  <body>
+    <svg viewBox="0 0 1024 1024" xmlns="http://www.w3.org/2000/svg">
+      <defs>
+        <linearGradient id="grad" x1="0%" y1="0%" x2="100%" y2="100%">
+          <stop offset="0%" style="stop-color: #00f2ea; stop-opacity: 1" />
+          <stop offset="100%" style="stop-color: #ff0050; stop-opacity: 1" />
+        </linearGradient>
+        <filter id="shadow">
+          <feDropShadow dx="0" dy="10" stdDeviation="20" flood-color="#000" flood-opacity="0.3" />
+        </filter>
+      </defs>
+
+      <!-- Background -->
+      <rect x="64" y="64" width="896" height="896" rx="200" ry="200" fill="url(#grad)" filter="url(#shadow)" />
+
+      <!-- Download Arrow -->
+      <path
+        d="M512 256 V640 M320 448 L512 640 L704 448"
+        stroke="white"
+        stroke-width="80"
+        stroke-linecap="round"
+        stroke-linejoin="round"
+        fill="none"
+      />
+      <path d="M320 768 H704" stroke="white" stroke-width="80" stroke-linecap="round" />
+    </svg>
+  </body>
+</html>
