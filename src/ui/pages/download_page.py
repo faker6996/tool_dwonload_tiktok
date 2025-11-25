@@ -71,18 +71,21 @@ class DownloadPage(QWidget):
 
         # Action Area
         action_layout = QHBoxLayout()
+        action_layout.setSpacing(10)
+        
+        self.progress_bar = QProgressBar()
+        self.progress_bar.setVisible(False)
+        self.progress_bar.setMinimumWidth(200)
         
         self.download_btn = QPushButton("Save Video")
         self.download_btn.setObjectName("primary")
         self.download_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self.download_btn.setEnabled(False)
+        self.download_btn.setMinimumWidth(120)
         self.download_btn.clicked.connect(self.download_video)
         
-        self.progress_bar = QProgressBar()
-        self.progress_bar.setVisible(False)
-        
-        action_layout.addStretch()
         action_layout.addWidget(self.progress_bar)
+        action_layout.addStretch()
         action_layout.addWidget(self.download_btn)
         layout.addLayout(action_layout)
 

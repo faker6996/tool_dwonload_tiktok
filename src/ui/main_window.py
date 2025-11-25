@@ -36,8 +36,8 @@ class MainWindow(QMainWindow):
         # --- Sidebar (Left, Fixed Width) ---
         self.sidebar_container = QWidget()
         self.sidebar_container.setObjectName("sidebar_container")
-        self.sidebar_container.setFixedWidth(200) # Reduced width
-        self.sidebar_container.setStyleSheet("background-color: #161b22; border-right: 1px solid #30363d;") # Grayish background
+        self.sidebar_container.setFixedWidth(220) # Slightly wider for modern look
+        # Styles handled by DARK_THEME stylesheet
         
         sidebar_layout = QVBoxLayout(self.sidebar_container)
         sidebar_layout.setContentsMargins(0, 0, 0, 0)
@@ -65,33 +65,11 @@ class MainWindow(QMainWindow):
         # 2. Navigation Menu
         self.sidebar = QListWidget()
         self.sidebar.setFocusPolicy(Qt.FocusPolicy.NoFocus)
-        self.sidebar.setStyleSheet("""
-            QListWidget {
-                background-color: transparent;
-                border: none;
-                outline: none;
-            }
-            QListWidget::item {
-                padding: 10px 15px;
-                color: #8b949e;
-                border-left: 3px solid transparent;
-                margin-bottom: 2px;
-                font-size: 13px;
-            }
-            QListWidget::item:selected {
-                background-color: #21262d;
-                color: #ffffff;
-                border-left: 3px solid #58a6ff;
-            }
-            QListWidget::item:hover {
-                background-color: #21262d;
-                color: #c9d1d9;
-            }
-        """)
+        # Styles handled by DARK_THEME stylesheet
         
-        self.add_sidebar_item("Download", "download")
-        self.add_sidebar_item("Edit", "edit")
-        self.add_sidebar_item("Document", "document")
+        self.add_sidebar_item("📥 Download", "download")
+        self.add_sidebar_item("✂️ Edit", "edit")
+        self.add_sidebar_item("📚 Document", "document")
         
         self.sidebar.currentRowChanged.connect(self.change_page)
         sidebar_layout.addWidget(self.sidebar)
@@ -112,40 +90,37 @@ class MainWindow(QMainWindow):
 
         # --- Right Content Area ---
         right_container = QWidget()
-        right_container.setStyleSheet("background-color: #0d1117;") 
+        # Styles handled by DARK_THEME stylesheet
         right_layout = QVBoxLayout(right_container)
         right_layout.setSpacing(0)
         right_layout.setContentsMargins(0, 0, 0, 0)
 
         # 1. Header
         header_widget = QWidget()
-        header_widget.setFixedHeight(60)
-        header_widget.setStyleSheet("border-bottom: 1px solid #30363d; background-color: #0d1117;")
-        header_layout = QHBoxLayout(header_widget)
-        header_layout.setContentsMargins(20, 0, 20, 0)
-        
-        # Search Bar
-        self.search_input = QLineEdit()
-        self.search_input.setPlaceholderText("Search videos...")
-        self.search_input.setFixedWidth(300)
-        self.search_input.setStyleSheet("""
-            QLineEdit {
-                background-color: #161b22; 
-                color: #c9d1d9; 
-                padding: 6px 12px; 
-                border-radius: 6px; 
-                border: 1px solid #30363d;
-                font-size: 13px;
-            }
-            QLineEdit:focus {
-                border: 1px solid #58a6ff;
-            }
+        header_widget.setFixedHeight(70)
+        header_widget.setStyleSheet("""
+            background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+                                        stop:0 rgba(22, 27, 34, 0.8), 
+                                        stop:1 rgba(10, 14, 39, 0.6));
+            border-bottom: 1px solid rgba(88, 166, 255, 0.15);
         """)
-        header_layout.addWidget(self.search_input)
+        header_layout = QHBoxLayout(header_widget)
+        header_layout.setContentsMargins(30, 0, 30, 0)
+        
+        # Page Title Label (shows current menu)
+        self.page_title_label = QLabel("📥 Download")
+        self.page_title_label.setStyleSheet("""
+            color: #ffffff; 
+            font-size: 20px;
+            font-weight: 600;
+        """)
+        header_layout.addWidget(self.page_title_label)
         header_layout.addStretch()
         
-        # Right side icons
-        # Removed for cleaner look as per user feedback about "2 bars"
+        # Version label
+        version_label = QLabel("v1.0.0")
+        version_label.setStyleSheet("color: rgba(139, 157, 195, 0.5); font-size: 12px;")
+        header_layout.addWidget(version_label)
         
         right_layout.addWidget(header_widget)
 
@@ -177,6 +152,10 @@ class MainWindow(QMainWindow):
 
     def change_page(self, index):
         self.stacked_widget.setCurrentIndex(index)
+        # Update header title based on selected menu
+        menu_titles = ["📥 Download", "✂️ Edit", "📚 Document"]
+        if 0 <= index < len(menu_titles):
+            self.page_title_label.setText(menu_titles[index])
 
     def apply_styles(self):
         self.setStyleSheet(DARK_THEME)
