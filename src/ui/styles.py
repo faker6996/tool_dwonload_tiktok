@@ -14,8 +14,8 @@ QListWidget {
     background-color: #252526;
     border: none;
     outline: none;
-    min-width: 200px;
-    max-width: 200px;
+    min-width: 180px;
+    max-width: 180px;
 }
 QListWidget::item {
     padding: 15px 20px;
