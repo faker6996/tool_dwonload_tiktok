@@ -2,12 +2,17 @@
 
 A modern desktop application for downloading videos from TikTok and Douyin without watermarks. Built with Python and PyQt6.
 
-## Features
+## 🌟 Tính Năng
 
-- **Universal Support**: Works with both TikTok and Douyin links.
-- **Video Preview**: Watch the video inside the app before downloading.
-- **No Watermark**: Tries to fetch the clean version of the video.
-- **Modern UI**: Clean, dark-themed interface.
+- **Đa Nền Tảng**: Hỗ trợ tải video từ nhiều mạng xã hội phổ biến:
+  - ✅ **TikTok** (Không logo, hỗ trợ video riêng tư nếu có cookie)
+  - ✅ **Douyin** (Trung Quốc - Không logo, tự động xử lý Captcha/Cookie)
+  - ✅ **YouTube** (Hỗ trợ Shorts và Video thường)
+  - ✅ **Threads** (Hỗ trợ tải video từ Threads.net)
+  - ⚠️ **Facebook / Instagram / X (Twitter)** (Hỗ trợ cơ bản, có thể yêu cầu cookie tùy video)
+- **Xem Trước Video**: Phát video trực tiếp trong ứng dụng trước khi tải xuống.
+- **Giao Diện Đẹp**: Thiết kế hiện đại với Dark Mode, dễ sử dụng.
+- **Xử Lý Thông Minh**: Tự động phát hiện liên kết và chọn phương pháp tải tối ưu.terface.
 
 ## Installation
 

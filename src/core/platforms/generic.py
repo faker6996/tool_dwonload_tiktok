@@ -1,4 +1,4 @@
-from .base import BaseDownloader
+from ..base import BaseDownloader
 import yt_dlp
 
 class GenericDownloader(BaseDownloader):
