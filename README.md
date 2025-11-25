@@ -77,10 +77,10 @@ You can package the application into a standalone executable using `pyinstaller`
 
     ```bash
     # For Mac/Linux (Run this on Mac/Linux)
-    pyinstaller --noconfirm --onefile --windowed --name "TikTokDownloader" --icon "app_icon.png" --add-data "src:src" main.py
+    pyinstaller --noconfirm --onedir --windowed --name "VideoDownloader" --icon "app_icon.png" --add-data "src:src" main.py
 
     # For Windows (Run this ON WINDOWS only)
-    # pyinstaller --noconfirm --onefile --windowed --name "TikTokDownloader" --icon "app_icon.png" --add-data "src;src" main.py
+    # pyinstaller --noconfirm --onedir --windowed --name "VideoDownloader_Win" --icon "app_icon.png" --add-data "src;src" main.py
     ```
 
 3.  **Run**:
