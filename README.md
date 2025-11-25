@@ -18,18 +18,33 @@ A modern desktop application for downloading videos from TikTok and Douyin witho
     cd tool_download_tiktok
     ```
 
-2.  **Install dependencies**:
+2.  **Setup Virtual Environment & Install Dependencies**:
+
     ```bash
-    pip install -r requirements.txt
-    playwright install
+    # Create virtual environment
+    python3 -m venv venv
+
+    # Install dependencies
+    ./venv/bin/pip install -r requirements.txt
+    ./venv/bin/playwright install
     ```
 
 ## Usage
 
-Run the application:
+### Option 1: Run from Source
+
+Run the application using the virtual environment's Python:
 
 ```bash
-python main.py
+./venv/bin/python main.py
+```
+
+### Option 2: Run Executable
+
+If you have built the app (see below), you can run the standalone executable:
+
+```bash
+./dist/TikTokDownloader
 ```
 
 1.  Paste a TikTok or Douyin link.
@@ -57,13 +72,13 @@ You can package the application into a standalone executable using `pyinstaller`
 
     ```bash
     # For Mac/Linux (Run this on Mac/Linux)
-    pyinstaller --name "VideoDownloader" --windowed --onedir --icon "app_icon.png" --add-data "src:src" main.py
+    pyinstaller --noconfirm --onefile --windowed --name "TikTokDownloader" --icon "app_icon.png" --add-data "src:src" main.py
 
     # For Windows (Run this ON WINDOWS only)
-    # pyinstaller --name "VideoDownloader_Win" --windowed --onedir --icon "app_icon.png" --add-data "src;src" main.py
+    # pyinstaller --noconfirm --onefile --windowed --name "TikTokDownloader" --icon "app_icon.png" --add-data "src;src" main.py
     ```
 
 3.  **Run**:
-    The executable will be in the `dist/VideoDownloader` folder.
+    The executable will be in the `dist` folder as `TikTokDownloader`.
 
     _Note: The built app still requires Playwright browsers. On a new machine, you may need to run the app from a terminal first to see the "playwright install" prompt or bundle the browsers (advanced)._

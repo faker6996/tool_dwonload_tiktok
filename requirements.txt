@@ -3,3 +3,4 @@ requests
 pyktok
 playwright
 pyinstaller
+yt-dlp
