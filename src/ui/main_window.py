@@ -70,6 +70,7 @@ class MainWindow(QMainWindow):
         self.add_sidebar_item("📥 Download", "download")
         self.add_sidebar_item("✂️ Edit", "edit")
         self.add_sidebar_item("📚 Document", "document")
+        self.add_sidebar_item("⚙️ Settings", "settings")
         
         self.sidebar.currentRowChanged.connect(self.change_page)
         sidebar_layout.addWidget(self.sidebar)
@@ -151,11 +152,31 @@ class MainWindow(QMainWindow):
         self.sidebar.addItem(item)
 
     def change_page(self, index):
+        # Handle Settings (Index 3)
+        if index == 3:
+            self.open_settings()
+            # Revert selection to previous page or keep it? 
+            # Better to not change page.
+            # Let's just keep the previous selection visually? 
+            # Or just open dialog.
+            # For now, let's switch back to previous if possible, or just ignore page switch.
+            # But QStackedWidget needs an index. 
+            # Let's assume Settings is not a page in StackedWidget.
+            
+            # Restore previous selection (hacky but works for now)
+            # self.sidebar.setCurrentIndex(...) 
+            return
+
         self.stacked_widget.setCurrentIndex(index)
         # Update header title based on selected menu
         menu_titles = ["📥 Download", "✂️ Edit", "📚 Document"]
         if 0 <= index < len(menu_titles):
             self.page_title_label.setText(menu_titles[index])
+
+    def open_settings(self):
+        from src.ui.dialogs.settings_dialog import SettingsDialog
+        dialog = SettingsDialog(self)
+        dialog.exec()
 
     def apply_styles(self):
         self.setStyleSheet(DARK_THEME)

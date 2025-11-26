@@ -63,3 +63,20 @@ class DownloaderThread(QThread):
         
         success = self.downloader.download_video(self.url, self.filename, self.platform, self.cookies)
         self.finished.emit(success, self.filename)
+
+class IngestionThread(QThread):
+    asset_processed = pyqtSignal(dict)
+    finished = pyqtSignal()
+    
+    def __init__(self, file_paths):
+        super().__init__()
+        self.file_paths = file_paths
+        from src.core.ingestion import MediaIngestion
+        self.ingestion = MediaIngestion()
+
+    def run(self):
+        for file_path in self.file_paths:
+            asset = self.ingestion.probe_file(file_path)
+            if asset:
+                self.asset_processed.emit(asset)
+        self.finished.emit()
