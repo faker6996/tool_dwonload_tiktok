@@ -19,14 +19,41 @@ class EditPage(QWidget):
         # Header Area
         from PyQt6.QtWidgets import QHBoxLayout, QPushButton, QLabel
         header_widget = QWidget()
-        header_widget.setFixedHeight(40)
+        header_widget.setFixedHeight(50)
+        header_widget.setStyleSheet("""
+            QWidget {
+                background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+                                            stop:0 rgba(30, 30, 30, 0.98), 
+                                            stop:1 rgba(22, 27, 34, 0.95));
+                border-bottom: 1px solid rgba(88, 166, 255, 0.2);
+            }
+        """)
         header_layout = QHBoxLayout(header_widget)
-        header_layout.setContentsMargins(10, 0, 10, 0)
+        header_layout.setContentsMargins(15, 0, 15, 0)
         
         header_layout.addStretch()
         
-        export_btn = QPushButton("Export Video")
-        export_btn.setStyleSheet("background-color: #2196F3; color: white; font-weight: bold; padding: 5px 15px;")
+        export_btn = QPushButton("🎬 Export Video")
+        export_btn.setStyleSheet("""
+            QPushButton {
+                background: qlineargradient(x1:0, y1:0, x2:1, y2:0, 
+                                            stop:0 #58a6ff, stop:1 #8b5cf6);
+                color: white;
+                font-weight: bold;
+                padding: 10px 24px;
+                border-radius: 6px;
+                border: none;
+                font-size: 14px;
+            }
+            QPushButton:hover {
+                background: qlineargradient(x1:0, y1:0, x2:1, y2:0, 
+                                            stop:0 #6bb4ff, stop:1 #9d6fff);
+            }
+            QPushButton:pressed {
+                background: qlineargradient(x1:0, y1:0, x2:1, y2:0, 
+                                            stop:0 #4a8fd9, stop:1 #7645d9);
+            }
+        """)
         export_btn.clicked.connect(self.open_export_dialog)
         header_layout.addWidget(export_btn)
         

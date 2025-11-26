@@ -51,15 +51,15 @@ class Timeline(QFrame):
         self.caption_btn = QPushButton("🎯 Auto Caption")
         self.caption_btn.setStyleSheet("""
             QPushButton {
-                background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #2D5F9E, stop:1 #5C3D99);
+                background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #58a6ff, stop:1 #8b5cf6);
                 color: white;
                 border: none;
-                padding: 6px 12px;
+                padding: 6px 14px;
                 border-radius: 4px;
                 font-weight: 500;
             }
             QPushButton:hover {
-                background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #3A7BC8, stop:1 #7350B3);
+                background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #6bb4ff, stop:1 #9d6fff);
             }
         """)
         self.caption_btn.setCursor(Qt.CursorShape.PointingHandCursor)
@@ -70,15 +70,15 @@ class Timeline(QFrame):
         self.tts_btn = QPushButton("🎤 Text to Speech")
         self.tts_btn.setStyleSheet("""
             QPushButton {
-                background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #2D9E73, stop:1 #3D7C99);
+                background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #667eea, stop:1 #764ba2);
                 color: white;
                 border: none;
-                padding: 6px 12px;
+                padding: 6px 14px;
                 border-radius: 4px;
                 font-weight: 500;
             }
             QPushButton:hover {
-                background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #3AC894, stop:1 #5096B3);
+                background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #7890ff, stop:1 #8b5fc3);
             }
         """)
         self.tts_btn.setCursor(Qt.CursorShape.PointingHandCursor)

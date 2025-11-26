@@ -1,3 +1,35 @@
+# Color Palette - Design System
+"""
+App sử dụng Dark Theme với màu chủ đạo Blue-Purple gradient
+
+PRIMARY COLORS:
+- Primary Blue: #58a6ff (Bright Blue - Main accent)
+- Primary Purple: #8b5cf6 (Vivid Purple - Secondary accent)
+- Primary Gradient: Blue → Purple
+
+BACKGROUND COLORS:
+- Background Base: #121212 (Deepest black)
+- Background Panel: #1E1E1E (Panel background)
+- Background Input: #252526 (Input fields)
+- Background Hover: #2C2C2C (Hover states)
+
+BORDER & DIVIDER:
+- Border Primary: #2C2C2C
+- Border Accent: #3E3E3E
+- Border Highlight: #90CAF9
+
+TEXT COLORS:
+- Text Primary: #E0E0E0 (Main text)
+- Text Secondary: #8b9dc3 (Muted text)
+- Text Highlight: #FFFFFF (Bright text)
+
+ACCENT COLORS (cho các tính năng):
+- Success: #10B981 (Green)
+- Warning: #F59E0B (Orange)
+- Error: #EF4444 (Red)
+- Info: #3B82F6 (Blue)
+"""
+
 DARK_THEME = """
 /* Global Reset */
 QWidget {
@@ -77,21 +109,7 @@ QLabel#panel_title {
     border-top-right-radius: 4px;
 }
 
-/* Media Pool List Widget (Specific override if needed, but generic QListWidget style above might conflict) 
-   We need to be careful. The sidebar uses QListWidget, and Media Pool uses QListWidget.
-   Let's target Media Pool specifically if possible, or make the generic one compatible.
-   
-   The sidebar styles above are quite specific (transparent background).
-   The Media Pool needs a solid background or to inherit from the panel.
-   
-   Let's make QListWidget generic style suitable for Sidebar, and add a specific style for Media Pool if we can target it by ID or parent.
-   In media_pool.py, we didn't set an object name for the list widget.
-   Let's assume generic QListWidget is transparent (good for sidebar), 
-   and Media Pool's QListWidget will sit on top of QFrame#panel which has #1E1E1E background.
-   So transparent background for QListWidget is actually fine for Media Pool too!
-*/
-
-/* Buttons */
+/* Buttons - Using Primary Blue-Purple Gradient */
 QPushButton {
     background-color: #2C2C2C;
     color: #E0E0E0;
@@ -210,7 +228,7 @@ QComboBox QAbstractItemView {
     padding: 4px;
 }
 
-/* Slider */
+/* Slider - Using Primary Gradient */
 QSlider::groove:horizontal {
     border: none;
     height: 4px;
@@ -263,7 +281,7 @@ QTabBar::tab:hover:!selected {
     color: #c9d1d9;
 }
 
-/* CheckBox */
+/* CheckBox - Using Primary Gradient */
 QCheckBox {
     spacing: 8px;
     color: #E0E0E0;
@@ -292,7 +310,7 @@ QCheckBox::indicator:checked:hover {
                                 stop:0 #6bb4ff, stop:1 #9d6fff);
 }
 
-/* ProgressBar */
+/* ProgressBar - Using Primary Gradient */
 QProgressBar {
     border: 1px solid #3E3E3E;
     border-radius: 4px;

@@ -47,7 +47,22 @@ class MediaPool(QFrame):
         title.setObjectName("panel_title")
         header_layout.addWidget(title)
         header_layout.addStretch()
-        self.import_btn = QPushButton("Import")
+        self.import_btn = QPushButton("📁 Import Media")
+        self.import_btn.setStyleSheet("""
+            QPushButton {
+                background: qlineargradient(x1:0, y1:0, x2:1, y2:0, 
+                                            stop:0 #667eea, stop:1 #764ba2);
+                color: white;
+                border: none;
+                padding: 7px 16px;
+                border-radius: 5px;
+                font-weight: 500;
+            }
+            QPushButton:hover {
+                background: qlineargradient(x1:0, y1:0, x2:1, y2:0, 
+                                            stop:0 #7890ff, stop:1 #8b5fc3);
+            }
+        """)
         self.import_btn.clicked.connect(self.open_file_dialog)
         header_layout.addWidget(self.import_btn)
         local_layout.addLayout(header_layout)
