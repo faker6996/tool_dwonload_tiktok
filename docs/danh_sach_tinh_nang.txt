@@ -1,0 +1,172 @@
+DANH SÁCH TÍNH NĂNG KỸ THUẬT (FEATURE SPECIFICATIONS)
+
+Phiên bản: 1.0 | Trạng thái: Draft | Phạm vi: MVP & Giai đoạn 1
+Tài liệu này phân rã các yêu cầu cấp cao thành danh sách tính năng cụ thể, mô tả chi tiết hành vi hệ thống và trải nghiệm người dùng mong đợi.
+
+1. MODULE TIMELINE & CORE EDITING (CỐT LÕI)
+
+Đây là "trái tim" của ứng dụng, nơi người dùng tương tác nhiều nhất.
+
+Tên Tính Năng
+Mô Tả Chi Tiết & Hành Vi Kỹ Thuật
+Magnetic Timeline (Trục thời gian từ tính)
+Mô tả: Các clip trên track chính (Main Track) tự động kết dính với nhau. Khi xóa một clip, clip phía sau tự động trượt lên lấp chỗ trống (Ripple Delete).
+
+Hành vi: Ngăn chặn việc vô tình để lại các khoảng đen (gap) giữa các video. Hỗ trợ tắt/bật chế độ này (nhấn phím P hoặc công cụ Position) để di chuyển tự do.1
+Multi-Track Layering (Đa lớp)
+Mô tả: Hỗ trợ không giới hạn (hoặc tối thiểu 10+) track video/audio xếp chồng lên nhau.
+
+Hành vi: Clip ở track trên (Overlay) sẽ che clip ở track dưới. Tự động tạo track mới khi kéo thả media đè lên nhau.2
+Auto-Snapping (Bắt dính thông minh)
+Mô tả: Khi di chuyển clip, đầu đọc (Playhead) hoặc biên của clip sẽ tự động "hít" vào các điểm cắt, marker, hoặc đầu/cuối của các clip khác.
+
+Hành vi: Giúp căn chỉnh chính xác từng frame mà không cần zoom quá lớn.3
+Group / Ungroup Clips
+Mô tả: Cho phép chọn nhiều clip và nhóm lại thành một khối duy nhất để di chuyển hoặc áp dụng hiệu ứng chung.
+
+Hành vi: Nhấn Ctrl/Cmd + G để nhóm.
+Compound Clip (Clip hỗn hợp)
+Mô tả: Gộp nhiều layer (video, text, effect) thành một object duy nhất để dọn dẹp timeline hoặc tái sử dụng. Có thể mở ra để chỉnh sửa lại bên trong.
+
+
+2. MODULE XỬ LÝ HÌNH ẢNH (VISUAL MANIPULATION)
+
+
+Tên Tính Năng
+Mô Tả Chi Tiết & Hành Vi Kỹ Thuật
+Transform Controls (Biến đổi)
+Mô tả: Bảng điều khiển vị trí (X, Y), tỷ lệ (Scale), xoay (Rotation).
+
+Hành vi: Hỗ trợ thao tác trực tiếp trên màn hình Preview (kéo các góc để phóng to/thu nhỏ).4
+Advanced Keyframing (Khung hình chính)
+Mô tả: Cho phép đặt keyframe cho mọi thông số (Vị trí, Opacity, Zoom, Âm lượng).
+
+Hành vi: Hệ thống nội suy (interpolate) chuyển động giữa 2 điểm A và B. Cần hỗ trợ Ease-in/Ease-out để chuyển động mượt mà hơn thay vì chuyển động tuyến tính cứng nhắc.5
+Smart Masking (Mặt nạ)
+Mô tả: Cắt video theo hình dạng (Tròn, Vuông, Tim, Sao) hoặc vẽ tự do (Pen tool).
+
+Hành vi: Cho phép chỉnh độ mờ viền (Feather). Mask có thể di chuyển theo keyframe.6
+Blending Modes (Chế độ hòa trộn)
+Mô tả: Các chế độ hòa trộn layer như Screen, Multiply, Overlay, Soft Light.
+
+Hành vi: Dùng để lồng ghép hiệu ứng ánh sáng, lửa, mưa vào video gốc một cách tự nhiên.4
+Speed Curve (Đường cong tốc độ)
+Mô tả: Thay đổi tốc độ video không tuyến tính (Speed Ramping).
+
+Hành vi: Cung cấp preset như "Montage", "Bullet Time" (nhanh -> chậm -> nhanh). Sử dụng thuật toán Optical Flow để bù frame, giúp video slow-motion mượt mà, không bị giật.7
+
+
+3. MODULE ÂM THANH (AUDIO ENGINEERING)
+
+
+Tên Tính Năng
+Mô Tả Chi Tiết & Hành Vi Kỹ Thuật
+Audio Separator (Tách âm)
+Mô tả: Tách track âm thanh ra khỏi video clip gốc chỉ bằng 1 click.
+
+Hành vi: Audio sau khi tách sẽ nằm ở track âm thanh riêng biệt để dễ dàng cắt ghép hoặc thay thế.9
+Vocal Isolation (Tách giọng AI)
+Mô tả: Sử dụng AI để loại bỏ nhạc nền, giữ lại giọng nói (hoặc ngược lại: loại bỏ giọng nói để lấy nhạc beat).
+
+Hành vi: Cực kỳ hữu ích cho việc remix hoặc làm karaoke.10
+Loudness Normalization
+Mô tả: Tự động cân bằng âm lượng của tất cả các clip về mức chuẩn (ví dụ -14 LUFS).
+
+Hành vi: Ngăn chặn tình trạng clip này quá to, clip kia quá nhỏ.11
+Noise Reduction (Khử ồn)
+Mô tả: Lọc bỏ tiếng ồn môi trường (tiếng gió, tiếng xe) khỏi đoạn thu âm.
+
+Hành vi: Có thanh trượt điều chỉnh mức độ can thiệp để tránh làm méo giọng.11
+Beat Sync (Bắt nhịp)
+Mô tả: Tự động phân tích và đánh dấu (mark) các điểm nhịp mạnh (bass) trên sóng âm thanh.
+
+Hành vi: Các clip video sẽ tự động bắt dính vào các điểm mark này để tạo dựng video khớp nhạc (Edit on the beat).12
+
+
+4. MODULE AI & TỰ ĐỘNG HÓA (AI SUITE)
+
+
+Tên Tính Năng
+Mô Tả Chi Tiết & Hành Vi Kỹ Thuật
+Auto Captions (Phụ đề tự động)
+Mô tả: Chuyển đổi giọng nói thành văn bản (Speech-to-Text) và hiển thị dưới dạng layer phụ đề.
+
+Hành vi: Hỗ trợ đa ngôn ngữ. Cho phép chỉnh sửa hàng loạt (Batch edit) để sửa lỗi chính tả. Tự động ngắt dòng thông minh.13
+Text-to-Speech (Chuyển văn bản thành giọng nói)
+Mô tả: Nhập văn bản và chọn giọng đọc AI (Nam/Nữ, Vui vẻ/Nghiêm túc, Chị Google).
+
+Hành vi: Giọng đọc được tạo ra dưới dạng file audio mới trên timeline. Hỗ trợ điều chỉnh tốc độ đọc và cao độ (Pitch).12
+Auto Cutout / Remove BG
+Mô tả: Xóa nền video chân dung mà không cần phông xanh (Green screen).
+
+Hành vi: AI tự động nhận diện chủ thể người và tách khỏi nền. Cho phép thêm viền (Stroke) xung quanh chủ thể.
+Auto Reframe
+Mô tả: Tự động chuyển đổi tỷ lệ khung hình (ví dụ: 16:9 sang 9:16).
+
+Hành vi: AI theo dõi chuyển động của chủ thể chính và tự động crop giữ chủ thể ở giữa khung hình dọc.16
+
+
+5. MODULE HIỆU ỨNG & MÀU SẮC (VFX & COLOR)
+
+
+Tên Tính Năng
+Mô Tả Chi Tiết & Hành Vi Kỹ Thuật
+Chroma Key (Phông xanh)
+Mô tả: Công cụ hút màu để xóa phông xanh/lục.
+
+Hành vi: Cung cấp thanh trượt Intensity (Cường độ) và Shadow (Bóng) để xử lý triệt để các viền xanh còn sót lại (Color spill).17
+Color Wheels & Curves
+Mô tả: Công cụ chỉnh màu chuyên nghiệp.
+
+Hành vi: Wheels: Chỉnh màu riêng cho vùng Tối (Shadows), Trung tính (Midtones), Sáng (Highlights). Curves: Biểu đồ đường cong RGB để kiểm soát chi tiết độ tương phản.4
+Filters & LUTs Support
+Mô tả: Áp dụng bộ lọc màu có sẵn. Hỗ trợ nhập file LUT (.cube) từ bên ngoài.
+Sticker & Text Effects
+Mô tả: Thư viện nhãn dán động và hiệu ứng chữ.
+
+Hành vi: Text hỗ trợ Glow (Phát sáng), Stroke (Viền), Shadow (Đổ bóng) và các hiệu ứng động (Animation) như máy đánh chữ, fade in/out,.
+
+
+6. HỆ THỐNG & HIỆU SUẤT (SYSTEM & PERFORMANCE)
+
+
+Tên Tính Năng
+Mô Tả Chi Tiết & Hành Vi Kỹ Thuật
+Proxy Workflow
+Mô tả: Tự động tạo bản sao nhẹ (720p/540p) để edit mượt mà trên máy cấu hình yếu.
+
+Hành vi: Khi Preview dùng file nhẹ, khi Export dùng file gốc chất lượng cao. Người dùng có thể bật/tắt trong cài đặt.
+Custom Shortcuts
+Mô tả: Cho phép người dùng tự định nghĩa phím tắt.
+
+Hành vi: Có các preset phím tắt mô phỏng Adobe Premiere hoặc Final Cut để người dùng cũ dễ làm quen,.
+4K/60fps Export
+Mô tả: Xuất file chất lượng cao.
+
+Hành vi: Hỗ trợ codec H.264 (tương thích cao) và HEVC/H.265 (nén tốt). Tùy chọn Bitrate (CBR/VBR) hoặc chế độ "Recommended" cho TikTok/YouTube.19
+Cloud Sync (Đám mây)
+Mô tả: Đồng bộ dự án giữa các thiết bị.
+
+Hành vi: Lưu trữ file media và file project lên cloud (Teamspace), cho phép nhiều người cùng truy cập hoặc chuyển từ PC sang Mobile để edit tiếp,.
+
+Works cited
+With FCPX magnetic timeline,the non-linear is linear again! - Creative COW, accessed November 26, 2025, https://creativecow.net/forums/thread/with-fcpx-magnetic-timelinethe-non-linear-is-linea/
+Essential Timeline Techniques for Every Editor in Any NLE - Frame.io Insider, accessed November 26, 2025, https://blog.frame.io/2023/03/16/essential-editing-techniques-for-any-editor/
+CapCut Layout and Timeline - YouTube, accessed November 26, 2025, https://www.youtube.com/watch?v=Vzdjjh9Vpwc
+How to Use CapCut: Get More Creative with Video Edits, accessed November 26, 2025, https://www.capcut.com/resource/how-to-use-capcut
+CapCut Desktop | The Ultimate AI Photo & Video Editor for Mac & PC, accessed November 26, 2025, https://www.capcut.com/tools/desktop-video-editor
+7 CapCut Effects That Will Instantly Make You Edit Like a Pro ! - YouTube, accessed November 26, 2025, https://www.youtube.com/watch?v=H6nWHe0D36I
+Create smooth videos with speed curve effects - CapCut, accessed November 26, 2025, https://www.capcut.com/tools/speed-ramp
+Mastering Customized Speed Curve in CapCut - YouTube, accessed November 26, 2025, https://www.youtube.com/watch?v=Q-ZEYyrVEvs
+Download CapCut Pro | Unock the Advanced Editing Features to Make Stunning Content, accessed November 26, 2025, https://www.capcut.com/resource/how-to-download-capcut-pro
+Capcut Tool Cheat Sheet: | LitCommerce, accessed November 26, 2025, https://litcommerce.com/wp-content/uploads/2025/06/Capcut-Tool-Cheat-Sheet.pdf
+Capcut PRO vs FREE - ALL Features Tested! - YouTube, accessed November 26, 2025, https://www.youtube.com/watch?v=NfEUTYVH4Vc
+Add emotion and tone with CapCut text to speech settings - PRNEWS.io, accessed November 26, 2025, https://prnews.io/blog/capcut-text-to-speech.html
+CapCut auto caption generator | free online automatic captions, accessed November 26, 2025, https://www.capcut.com/tools/auto-caption-generator
+How to Use the Subtitle Extractors: 4 Useful Solutions - CapCut, accessed November 26, 2025, https://www.capcut.com/resource/subtitle-extractor
+Instantly Convert Text to Speech - CapCut, accessed November 26, 2025, https://www.capcut.com/tools/text-to-speech
+10 CapCut Effects That Seem Too Good To Be Free (and true!) - YouTube, accessed November 26, 2025, https://www.youtube.com/watch?v=97PmPgUmzCU
+Beginner's Guide to Chroma Key Software - Get Started Today - CapCut, accessed November 26, 2025, https://www.capcut.com/resource/chroma-key-software
+How to Use the Chroma Key in CapCut - YouTube, accessed November 26, 2025, https://www.youtube.com/watch?v=5jQ15biQ9tc
+Exploring Bitrate in Video: Key to Quality Enhancement - CapCut, accessed November 26, 2025, https://www.capcut.com/resource/what-is-a-bitrate-in-video
+How to Export High-Quality Videos in CapCut | Mobile & Desktop Guide - Miracamp, accessed November 26, 2025, https://www.miracamp.com/learn/capcut/how-to-export-high-quality-videos

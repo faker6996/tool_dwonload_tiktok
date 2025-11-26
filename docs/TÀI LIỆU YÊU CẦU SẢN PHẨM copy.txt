@@ -1,0 +1,275 @@
+
+TÀI LIỆU YÊU CẦU SẢN PHẨM (PRD) & CHIẾN LƯỢC TÍNH NĂNG TOÀN DIỆN CHO NỀN TẢNG CHỈNH SỬA VIDEO THẾ HỆ MỚI
+
+
+1. Tổng quan Điều hành và Tầm nhìn Chiến lược
+
+
+1.1. Bối cảnh Thị trường và Sự chuyển dịch Mô hình
+
+Ngành công nghiệp phần mềm chỉnh sửa video (Non-Linear Editing - NLE) đang trải qua một cuộc cách mạng chưa từng có. Trong thập kỷ trước, thị trường bị phân cực rõ rệt: một bên là các công cụ chuyên nghiệp, đắt đỏ và phức tạp như Adobe Premiere Pro hay Avid Media Composer dành cho các nhà làm phim, và một bên là các công cụ cắt ghép thô sơ như Windows Movie Maker dành cho người dùng phổ thông. Tuy nhiên, sự bùng nổ của nền kinh tế sáng tạo (Creator Economy), được dẫn dắt bởi các nền tảng video dạng ngắn như TikTok, YouTube Shorts và Instagram Reels, đã xóa nhòa ranh giới này.
+Người dùng ngày nay – từ những nhà sáng tạo nội dung độc lập (KOLs/KOCs) đến các doanh nghiệp nhỏ – đòi hỏi một bộ công cụ "lai" (hybrid). Họ cần sức mạnh xử lý của các phần mềm chuyên nghiệp nhưng với giao diện trực quan của các ứng dụng di động, đồng thời tích hợp sâu rộng Trí tuệ Nhân tạo (AI) để tự động hóa các quy trình tẻ nhạt. Sản phẩm mục tiêu của chúng ta, lấy cảm hứng từ sự thành công của CapCut, không chỉ đơn thuần là một công cụ cắt ghép video; nó phải được định vị là một "Hệ sinh thái Sáng tạo Nội dung Tất cả trong Một" (All-in-One Creative Ecosystem).
+Dựa trên hình ảnh giao diện người dùng hiện tại của dự án "Universal Video Downloader", chúng ta thấy một nền tảng tiềm năng với các tab "Download", "Edit" và "Document". Chiến lược phát triển sẽ tập trung mở rộng tab "Edit" thành một powerhouse (trung tâm sức mạnh) về xử lý video, tận dụng nguồn media đầu vào từ tính năng Download có sẵn để tạo ra một quy trình làm việc khép kín: Tải xuống -> Chỉnh sửa -> Xuất bản.
+
+1.2. Chân dung Người dùng và Mục tiêu Thiết kế
+
+Việc xác định rõ chân dung người dùng (User Persona) là tối quan trọng để định hình tính năng. Chúng ta tập trung vào hai nhóm chính:
+The Social Content Creator (Người sáng tạo nội dung mạng xã hội): Ưu tiên tốc độ. Họ cần sản xuất 1-2 video mỗi ngày. Họ yêu cầu các mẫu (templates) có sẵn, tính năng tự động tạo phụ đề, và khả năng xuất video trực tiếp lên nền tảng.
+The Marketing Generalist (Nhân viên Marketing đa năng): Cần tạo video quảng cáo sản phẩm, video giới thiệu công ty. Họ cần các tính năng chỉnh sửa chuyên sâu hơn như Keyframe, Masking, và chỉnh màu (Color Grading) để đảm bảo nhận diện thương hiệu, nhưng không có thời gian để học các phần mềm phức tạp.
+Mục tiêu thiết kế của sản phẩm là "Sức mạnh ẩn sau sự đơn giản". Giao diện phải đủ sạch sẽ để người mới bắt đầu không cảm thấy choáng ngợp, nhưng khi đào sâu vào các menu con (context menus) và bảng thuộc tính (inspector panels), người dùng chuyên nghiệp vẫn tìm thấy các công cụ kiểm soát chi tiết như đường cong tốc độ (Speed Curve) hay biểu đồ màu (Color Wheels).
+
+1.3. Các Trụ cột Công nghệ Cốt lõi
+
+Điện toán đám mây và Đồng bộ hóa: Dự án cần hỗ trợ lưu trữ đám mây để người dùng có thể bắt đầu dự án trên một thiết bị và kết thúc trên thiết bị khác, hoặc cộng tác nhóm.
+AI-First Architecture: AI không phải là tính năng bổ sung (add-on) mà là nền tảng. Từ việc tách nền (cutout) đến cải thiện giọng nói, AI phải được tích hợp vào nhân của bộ công cụ chỉnh sửa.
+Hiệu suất Rendering: Tối ưu hóa phần cứng (GPU Acceleration) để hỗ trợ xem trước (preview) mượt mà ngay cả với các footage 4K, giảm thiểu nhu cầu tạo Proxy thủ công.
+
+2. Kiến trúc Giao diện Người dùng (UI) và Trải nghiệm (UX)
+
+Giao diện người dùng của một phần mềm chỉnh sửa video hiện đại cần cân bằng giữa mật độ thông tin cao và khả năng điều hướng dễ dàng. Chúng ta sẽ áp dụng mô hình bố cục ba cột (3-pane layout) tiêu chuẩn nhưng được tinh chỉnh để tối ưu hóa cho quy trình làm việc hiện đại.
+
+2.1. Phân vùng Không gian làm việc (Workspace Anatomy)
+
+Không gian làm việc chính sẽ được chia thành bốn khu vực chức năng riêng biệt, mỗi khu vực đảm nhiệm một vai trò cụ thể trong quy trình nhận thức của người dùng:
+Khu vực (Zone)
+Tên gọi Kỹ thuật
+Chức năng và Nhiệm vụ Chi tiết
+Zone A (Trái trên)
+Media & Asset Browser
+Đây là kho chứa nguyên liệu. Nó không chỉ hiển thị các file media cục bộ (Local files) mà còn tích hợp các thư viện đám mây (Cloud library) và các tab tài nguyên như Audio, Text, Stickers, Effects, Transitions, và Filters. Thiết kế cần dạng tab xếp chồng (stacked tabs) để tiết kiệm không gian.
+Zone B (Giữa trên)
+Player / Program Monitor
+Màn hình hiển thị kết quả thời gian thực. Cần hỗ trợ các công cụ thao tác trực tiếp trên màn hình (On-screen Controls - OSC) như kéo thả để thay đổi vị trí, xoay, và thay đổi kích thước của đối tượng mà không cần nhập số liệu.
+Zone C (Phải trên)
+Inspector / Properties Panel
+Khu vực điều khiển thông số kỹ thuật. Khi người dùng chọn một đối tượng (video, audio, text), bảng này sẽ hiển thị các thuộc tính tương ứng để tinh chỉnh chi tiết (ví dụ: Opacity, Scale, Volume, Font).
+Zone D (Dưới cùng)
+Timeline & Sequencing
+Trái tim của phần mềm. Đây là nơi diễn ra cấu trúc kể chuyện, nơi các clip được sắp xếp theo trình tự thời gian. Timeline cần hỗ trợ cơ chế "Magnetic" (từ tính) và đa lớp (multi-layer).
+
+
+2.2. Cơ chế Điều hướng và Tương tác
+
+Một trong những điểm yếu của các phần mềm truyền thống là sự phụ thuộc quá nhiều vào các menu thả xuống phức tạp. Sản phẩm của chúng ta sẽ ưu tiên các tương tác trực quan:
+Drag-and-Drop (Kéo và Thả): Đây là tương tác cốt lõi. Người dùng có thể kéo video từ thư viện vào timeline, kéo hiệu ứng thả trực tiếp lên clip, hoặc kéo file nhạc vào track âm thanh. Hệ thống phải cung cấp phản hồi thị giác (visual feedback) ngay lập tức, ví dụ như làm sáng vùng thả (drop zone) để người dùng biết chính xác điều gì sẽ xảy ra.
+Responsive Preview (Xem trước phản hồi nhanh): Khả năng "Skimming" (lướt chuột qua clip trong thư viện để xem nhanh nội dung) là bắt buộc. Điều này giúp người dùng tiết kiệm thời gian, không cần phải nhấp đúp để mở từng clip.
+Contextual Tools (Công cụ theo ngữ cảnh): Thanh công cụ ngay trên timeline sẽ thay đổi tùy thuộc vào đối tượng đang được chọn. Ví dụ, khi chọn một clip video, các công cụ như "Split", "Crop", "Speed" sẽ hiện ra. Khi chọn text, các công cụ "Edit Style", "Text-to-Speech" sẽ được ưu tiên.
+
+2.3. Hệ thống Phím tắt (Shortcuts Ecosystem)
+
+Đối với người dùng chuyên nghiệp, chuột là quá chậm. Hệ thống phím tắt cần được thiết kế khoa học, dựa trên tiêu chuẩn ngành (J-K-L editing) nhưng đơn giản hóa:
+Phím Space: Chơi/Dừng video.
+Ctrl/Cmd + B: Cắt (Split) tại vị trí con trỏ.
+Ctrl/Cmd + Z: Hoàn tác (Undo).
+Delete: Xóa clip đã chọn.
+J/K/L: Tua lùi, Dừng, Tua nhanh (với các mức tốc độ 2x, 4x, 8x khi nhấn liên tục).
+Mũi tên Trái/Phải: Di chuyển từng khung hình (frame-by-frame) để cắt chính xác.
+I / O: Đánh dấu điểm đầu (In) và điểm cuối (Out) cho một đoạn cụ thể để lặp lại (loop) hoặc xuất (export).
+
+3. Động cơ Timeline và Quản lý Track (Timeline Engine)
+
+Timeline là nơi người dùng dành 80% thời gian làm việc. Một timeline tồi sẽ giết chết sự sáng tạo. Chúng ta sẽ xây dựng một Hybrid Magnetic Timeline (Timeline từ tính lai).
+
+3.1. Cơ chế Magnetic (Từ tính) so với Linear (Tuyến tính)
+
+Trong các phần mềm truyền thống (Linear), khi bạn xóa một clip ở giữa, một khoảng trống đen (gap) sẽ xuất hiện, và bạn phải thủ công kéo tất cả các clip phía sau lên để lấp đầy. Điều này gây tốn thời gian và dễ tạo ra các lỗi khung hình đen (flash frames).
+Cơ chế Magnetic Timeline (tương tự Final Cut Pro hoặc CapCut) sẽ giải quyết vấn đề này:
+Main Track (Track chính): Đây là xương sống của câu chuyện. Các clip trên track chính được kết nối với nhau như nam châm. Khi xóa một clip, các clip phía sau tự động trượt lên để lấp chỗ trống. Khi chèn một clip vào giữa, các clip phía sau tự động trượt xuống để nhường chỗ.
+Overlay Tracks (Track phụ): Các lớp bên trên (PIP, Text, Sticker) hoạt động tự do hơn nhưng vẫn có điểm neo (anchor point) gắn vào clip chính. Điều này đảm bảo rằng khi bạn di chuyển đoạn video chính, các phụ đề hoặc hiệu ứng đi kèm sẽ di chuyển theo đồng bộ, tránh mất đồng bộ (out of sync).
+Tùy chọn Tắt Magnetic: Đối với người dùng nâng cao muốn kiểm soát chính xác khoảng trống để chèn nhịp điệu (pacing), cần có nút gạt (toggle) hoặc phím tắt (thường là phím P hoặc công cụ Position) để tạm thời tắt tính năng từ tính, cho phép để lại khoảng trống đen.
+
+3.2. Quản lý Đa lớp (Multi-layer Management)
+
+Sản phẩm không nên giới hạn số lượng track, hoặc ít nhất phải hỗ trợ một số lượng lớn (ví dụ: 10 track video và 10 track audio) để phục vụ các dự án phức tạp.
+Auto-Layering: Khi người dùng kéo một clip đè lên clip khác, phần mềm không nên ghi đè (overwrite) mà nên tự động tạo ra một track mới bên trên (overlay).
+Track Header Controls: Mỗi đầu track cần có các nút chức năng:
+Hide/Show (Biểu tượng con mắt): Ẩn track để xem các lớp bên dưới.
+Mute (Biểu tượng cái loa): Tắt tiếng của track đó.
+Lock (Biểu tượng ổ khóa): Khóa track để tránh chỉnh sửa nhầm.
+
+3.3. Công cụ Điều hướng Timeline Nâng cao
+
+Zooming: Hỗ trợ phím tắt Ctrl + Scroll để phóng to/thu nhỏ timeline mượt mà, tập trung vào vị trí con trỏ chuột.
+Timecode Display: Hiển thị thời gian dưới dạng HH:MM:SS:FF (Giờ:Phút:Giây:Khung hình) để đảm bảo độ chính xác tuyệt đối.
+Snapping (Bắt dính): Khi kéo clip, playhead cần tự động "hít" vào các điểm cắt (cut points), marker, hoặc đầu/cuối của các clip khác để giúp căn chỉnh dễ dàng.
+
+4. Bộ công cụ Chỉnh sửa và Thao tác Hình ảnh Cốt lõi
+
+Đây là tập hợp các tính năng cơ bản nhất nhưng cũng quan trọng nhất, xác định khả năng thao tác vật lý của người dùng đối với media.
+
+4.1. Biến đổi Hình học (Transform Operations)
+
+Mọi đối tượng hình ảnh (Video, Image, Sticker, Text) đều phải có các thuộc tính biến đổi có thể chỉnh sửa:
+Scale (Tỷ lệ): Phóng to thu nhỏ (0% - 1000%).
+Position (Vị trí): Tọa độ X, Y.
+Rotation (Xoay): Góc xoay 360 độ.
+Flip (Lật): Lật ngang (Horizontal) hoặc dọc (Vertical).
+Crop (Cắt xén): Cần hỗ trợ Crop tự do và Crop theo tỷ lệ chuẩn (16:9, 1:1, 9:16). Đặc biệt, tính năng Auto Reframe sử dụng AI để tự động giữ chủ thể ở giữa khung hình khi chuyển đổi tỷ lệ video (ví dụ: từ ngang sang dọc cho TikTok) là một tính năng "must-have" (phải có).
+
+4.2. Hệ thống Keyframe (Khung hình chính)
+
+Keyframe là tính năng phân biệt một công cụ chuyên nghiệp với một công cụ nghiệp dư. Nó cho phép người dùng tạo ra các chuyển động hoạt hình (animation) theo thời gian.
+Phạm vi áp dụng: Keyframe phải áp dụng được cho hầu hết các thông số: Vị trí, Độ mờ (Opacity), Âm lượng, Mask, và thậm chí là cường độ hiệu ứng (Filter strength).
+Cơ chế nội suy (Interpolation):
+Linear: Chuyển động đều, cơ bản nhưng cứng nhắc.
+Bezier/Ease-in Ease-out: Làm mượt chuyển động (nhanh dần ở đầu, chậm dần ở cuối) để tạo cảm giác tự nhiên, chuyên nghiệp.
+Graph Editor (Biểu đồ chỉnh sửa): (Tính năng nâng cao) Cung cấp một giao diện biểu đồ để người dùng trực quan hóa và điều chỉnh độ cong của chuyển động keyframe.
+
+4.3. Masking (Mặt nạ) và Blending (Hòa trộn)
+
+Masking: Cho phép người dùng giới hạn vùng hiển thị của video. Các hình dạng cơ bản gồm: Hình chữ nhật, Hình tròn, Split (chia đôi màn hình), Hình sao, Hình trái tim. Cần có thuộc tính Feather để làm mềm biên của mask.
+Blend Modes: Tích hợp các chế độ hòa trộn lớp tiêu chuẩn của công nghiệp đồ họa (giống Photoshop) để tạo hiệu ứng nghệ thuật:
+Screen/Lighten: Loại bỏ màu đen, giữ lại màu sáng (dùng cho hiệu ứng lửa, ánh sáng).
+Multiply/Darken: Loại bỏ màu trắng, giữ lại màu tối.
+Overlay/Soft Light: Tăng độ tương phản và hòa trộn màu sắc.
+
+4.4. Quản lý Tốc độ (Speed Ramping)
+
+Tính năng điều chỉnh tốc độ (Velocity Edit) là cực kỳ quan trọng đối với các video dạng ngắn hiện nay.
+Normal Speed: Điều chỉnh tốc độ cố định (0.1x đến 100x).
+Speed Curve (Đường cong tốc độ): Cho phép tốc độ thay đổi liên tục trong một clip. Ví dụ: Bắt đầu nhanh, chậm lại ở giữa (khoảnh khắc quan trọng), rồi lại nhanh.
+Presets: Cung cấp các mẫu có sẵn như "Montage", "Hero", "Bullet", "Flash In".
+Custom: Cho phép người dùng tự thêm điểm neo (beats) và kéo biểu đồ tốc độ.
+Optical Flow / Frame Blending: Khi làm chậm video (slow motion), phần mềm cần cung cấp tùy chọn nội suy khung hình (interpolation) để tạo ra các khung hình giả lập, giúp chuyển động mượt mà thay vì bị giật (stutter).
+
+5. Hệ thống Kỹ thuật Âm thanh (Audio Engineering Suite)
+
+Âm thanh chiếm 50% trải nghiệm của một video. Một công cụ chỉnh sửa tốt phải là một DAW (Digital Audio Workstation) thu nhỏ.
+
+5.1. Xử lý và Cân bằng Âm thanh (Mixing & Mastering)
+
+Volume Control: Điều chỉnh âm lượng theo thang dB. Có cảnh báo clip (màu đỏ) khi âm thanh vượt quá ngưỡng 0dB (gây vỡ tiếng).
+Fade In / Fade Out: Làm mờ âm thanh ở đầu và cuối clip để chuyển đổi mượt mà.
+Loudness Normalization: Tính năng một chạm để tự động cân bằng âm lượng của tất cả các clip về mức chuẩn (ví dụ -14 LUFS cho YouTube), giúp âm thanh đồng đều.
+
+5.2. Khử ồn và Nâng cao Giọng nói (Denoise & Vocal Enhancement)
+
+Noise Reduction: Sử dụng thuật toán để loại bỏ tiếng ồn nền (tiếng quạt, tiếng gió, tiếng xe cộ). Cần có thanh trượt để điều chỉnh cường độ, tránh làm giọng nói bị méo (robotic).
+Vocal Isolation (Tách giọng AI): Một tính năng cao cấp sử dụng AI để tách biệt hoàn toàn giọng nói khỏi nhạc nền hoặc tạp âm môi trường phức tạp.
+
+5.3. Hiệu ứng và Biến đổi Giọng nói (Voice Changer)
+
+Cung cấp bộ sưu tập các bộ lọc giọng nói (Voice FX) để phục vụ giải trí và ẩn danh:
+Basic: Chipmunk (Sóc), Deep (Trầm), Echo (Vang), Robot.
+Advanced Characters: Giả lập giọng yêu tinh, người khổng lồ, giọng điện thoại, loa phát thanh.
+Speech-to-Song: Chuyển đổi ngữ điệu nói thành giai điệu nhạc (tính năng vui nhộn cho nội dung TikTok).
+
+5.4. Đồng bộ Nhịp điệu (Beat Sync)
+
+Auto Beat Detection: Tự động phân tích sóng âm thanh của nhạc nền và đánh dấu (mark) các điểm nhịp mạnh (bass/drum hits) bằng các chấm màu vàng trên timeline.
+Magnetic Beats: Khi người dùng kéo hoặc cắt video, con trỏ sẽ tự động bắt dính vào các điểm beat này, giúp việc dựng video khớp nhạc (cutting on beat) trở nên cực kỳ nhanh chóng và chính xác.
+
+6. Hệ thống Hiệu ứng Hình ảnh (VFX) và Chỉnh màu (Color Grading)
+
+
+6.1. Thư viện Hiệu ứng và Bộ lọc (Effects & Filters Library)
+
+Hệ thống cần tích hợp một thư viện hiệu ứng khổng lồ, được cập nhật liên tục theo xu hướng (trending).
+Video Effects: Các hiệu ứng tác động lên toàn bộ khung hình như Glitch (Nhiễu), Blur (Làm mờ), Retro (Cổ điển), Lens Flare (Lóa ống kính).
+Body Effects (Hiệu ứng Cơ thể AI): Sử dụng AI để nhận diện cơ thể người và áp dụng hiệu ứng bao quanh như Sét, Lửa, Hào quang, hoặc làm biến dạng vui nhộn (Mắt to, Miệng rộng).
+Filters (Bộ lọc màu): Các preset màu (LUTs) được phân loại theo chủ đề: Cinematic, Food, Travel, Night, B&W. Hỗ trợ thanh trượt cường độ (Intensity slider).
+
+6.2. Chỉnh màu Chuyên sâu (Advanced Color Grading)
+
+Ngoài các bộ lọc có sẵn, cần cung cấp bộ công cụ chỉnh tay cho người dùng chuyên nghiệp:
+Basic Adjustments: Temp (Nhiệt độ màu), Tint, Saturation (Độ bão hòa), Brightness, Contrast, Highlights, Shadows.
+HSL (Hue - Saturation - Luminance): Cho phép điều chỉnh riêng biệt 8 kênh màu. Ví dụ: Chỉ thay đổi màu của bầu trời (Blue) mà không ảnh hưởng đến màu da (Orange).
+Curves (Đường cong màu): Biểu đồ RGB Curves cho phép can thiệp sâu vào vùng tối, trung tính và vùng sáng của từng kênh màu Đỏ, Xanh lá, Xanh dương.
+
+6.3. Công nghệ Xóa phông và Chroma Key
+
+Chroma Key: Công cụ xóa phông xanh truyền thống. Cần có công cụ hút màu (Color Picker) và các thanh trượt điều chỉnh Intensity (Cường độ) và Shadow (Bóng) để xử lý các viền xanh còn sót lại.
+Auto Cutout (Xóa nền thông minh): Sử dụng AI để tách người hoặc vật thể ra khỏi nền phức tạp mà không cần phông xanh. Tính năng này cần đạt độ chính xác cao ở phần tóc và biên dạng chuyển động nhanh.
+Custom Background: Sau khi tách nền, cho phép người dùng dễ dàng thay thế bằng nền màu, hình ảnh hoặc video khác.
+
+7. Hệ sinh thái Trí tuệ Nhân tạo (AI) và Tự động hóa
+
+Đây là yếu tố "thay đổi cuộc chơi" (game-changer), giúp sản phẩm vượt trội so với các đối thủ truyền thống.
+
+7.1. Phụ đề Tự động (Auto Captions)
+
+Cơ chế: Tự động chuyển đổi giọng nói (Speech-to-Text) thành lớp phụ đề trên timeline.
+Đa ngôn ngữ: Hỗ trợ nhận diện nhiều ngôn ngữ phổ biến và tự động dịch (Auto Translate) sang ngôn ngữ khác.
+Batch Edit: Giao diện cho phép chỉnh sửa văn bản hàng loạt thay vì phải nhấp vào từng clip phụ đề nhỏ lẻ.
+Hiệu ứng Karaoke: Tự động tô màu từng từ (word-by-word highlight) đồng bộ với giọng nói, một phong cách cực kỳ phổ biến trên Shorts/Reels hiện nay.
+
+7.2. Chuyển văn bản thành Giọng nói (Text-to-Speech - TTS)
+
+Thư viện Giọng đọc: Cung cấp các giọng đọc AI tự nhiên (Natural AI Voices) với nhiều sắc thái cảm xúc (Vui vẻ, Nghiêm túc, Kể chuyện). Cần tích hợp các giọng "Viral" đặc trưng của nền tảng (như giọng "Chị Google" hoặc các giọng AI đang trend).
+Voice Cloning: (Tính năng cao cấp) Cho phép người dùng ghi âm một mẫu ngắn (10-30 giây) để huấn luyện AI, sau đó AI có thể đọc bất kỳ văn bản nào bằng chính giọng của người dùng.
+
+7.3. Script-to-Video (Từ Kịch bản đến Video)
+
+Đây là tính năng dành cho người dùng muốn tạo nội dung nhanh chóng mà không có sẵn footage.
+Quy trình: Người dùng nhập một chủ đề hoặc kịch bản văn bản -> AI phân tích nội dung -> AI tự động tìm kiếm footage phù hợp từ thư viện Stock -> AI ghép giọng đọc TTS và nhạc nền -> Xuất ra một video nháp hoàn chỉnh.
+
+7.4. Tracking và Ổn định (Tracking & Stabilization)
+
+Motion Tracking: Cho phép gắn một đối tượng (text, sticker, mosaic) vào một vật thể chuyển động trong video (ví dụ: gắn nhãn tên đi theo người đang chạy).
+Camera Tracking: Phân tích chuyển động của camera để thêm các yếu tố 3D hoặc text bám vào mặt phẳng trong không gian.
+Stabilization: Sử dụng phân tích con quay hồi chuyển (gyroscope metadata) hoặc phân tích hình ảnh (optical flow) để khử rung cho video quay tay.
+
+8. Quản lý Tài nguyên và Thư viện Stock
+
+Để giữ chân người dùng trong ứng dụng, chúng ta cần cung cấp mọi thứ họ cần ngay tại chỗ.
+
+8.1. Thư viện Media Tích hợp (Built-in Asset Store)
+
+Stock Video & Photo: Tích hợp API từ các kho miễn phí bản quyền (Pexels, Unsplash, Pixabay) để người dùng tìm kiếm và kéo thả trực tiếp.
+Audio Library: Kho nhạc nền (BGM) và hiệu ứng âm thanh (SFX) phong phú. Cần phân loại rõ ràng về bản quyền (thương mại vs phi thương mại) để tránh việc người dùng bị đánh gậy bản quyền trên YouTube/TikTok.
+Brand Kit: Cho phép người dùng lưu trữ logo, bảng màu, font chữ thương hiệu để áp dụng nhanh chóng vào các dự án.
+
+8.2. Hệ thống Sticker và Text Templates
+
+Stickers: Hỗ trợ sticker tĩnh, sticker động (GIF/WebP), và sticker 3D.
+Text Templates: Các mẫu tiêu đề (Title), phần ba dưới (Lower Thirds), Intro/Outro được thiết kế sẵn chuyển động. Người dùng chỉ cần thay đổi nội dung chữ.
+
+9. Chiến lược Xuất bản và Phân phối (Export & Delivery Strategy)
+
+Giai đoạn cuối cùng của quy trình cũng cần được tối ưu hóa tỉ mỉ.
+
+9.1. Cấu hình Xuất File (Export Settings)
+
+Độ phân giải: Hỗ trợ từ 480p đến 4K (UHD).
+Tốc độ khung hình (Frame Rate): 24, 25, 30, 50, 60 fps.
+Codec: H.264 (AVC) cho độ tương thích cao, và H.265 (HEVC) cho chất lượng tốt hơn với dung lượng thấp hơn (yêu cầu phần cứng hỗ trợ). Hỗ trợ xuất Apple ProRes cho quy trình chuyên nghiệp.
+Container: MP4 và MOV.
+
+9.2. Kiểm soát Bitrate thông minh
+
+Người dùng phổ thông thường không hiểu về bitrate. Chúng ta cần cung cấp các tùy chọn đơn giản hóa bên cạnh tùy chọn nâng cao:
+Recommended: Tự động tính toán bitrate tối ưu dựa trên độ phân giải (ví dụ: 1080p @ 8Mbps, 4K @ 40Mbps).
+CBR (Constant Bitrate) / VBR (Variable Bitrate): Cho phép người dùng nhập giá trị cụ thể.
+
+9.3. Xuất bản Đa nền tảng (Direct Publishing)
+
+Tích hợp API của YouTube, TikTok, Facebook để cho phép:
+Đăng tải trực tiếp sau khi render xong.
+Tự động điền tiêu đề, mô tả, thẻ tag từ thông tin dự án.
+Chạy kiểm tra bản quyền (Copyright Check) trước khi đăng (đặc biệt quan trọng với TikTok/YouTube).
+
+9.4. Hình ảnh Thu nhỏ (Thumbnail)
+
+Tích hợp một trình chỉnh sửa ảnh mini ngay trong giao diện Export, cho phép người dùng chọn một khung hình từ video, thêm chữ tiêu đề to, đậm, viền (stroke) để tạo thumbnail hấp dẫn (click-worthy) mà không cần dùng Photoshop.
+
+10. Yêu cầu Phi chức năng và Hiệu suất Kỹ thuật
+
+
+10.1. Tối ưu hóa Hiệu suất (Performance Optimization)
+
+Proxy Workflow: Tự động tạo bản sao độ phân giải thấp (720p hoặc 540p) của các file gốc nặng (4K/8K) để quá trình chỉnh sửa trên timeline mượt mà. Khi xuất file (Render), hệ thống sẽ tự động tráo đổi lại file gốc để đảm bảo chất lượng cao nhất.
+Render Cache: Tự động render ngầm các đoạn video có nhiều hiệu ứng nặng trong lúc người dùng đang nghỉ tay, giúp việc xem trước (preview) không bị giật (drop frames).
+
+10.2. Khả năng Mở rộng và Tương thích
+
+Plugin Architecture: Xây dựng kiến trúc mở cho phép bên thứ ba phát triển các plugin hiệu ứng (OFX support) trong tương lai.
+Cross-Platform: Đảm bảo mã nguồn (Codebase) có thể biên dịch tốt trên cả Windows và macOS (Apple Silicon native support).
+
+10.3. Bảo mật và Quyền riêng tư
+
+Mã hóa dữ liệu dự án khi đồng bộ lên đám mây.
+Tuân thủ GDPR và các quy định về quyền riêng tư khi xử lý dữ liệu giọng nói và hình ảnh của người dùng qua các API AI.
+
+Kết luận
+
+Bản tài liệu PRD này phác thảo một lộ trình đầy tham vọng nhưng khả thi để xây dựng một công cụ chỉnh sửa video hàng đầu. Bằng cách tập trung vào trải nghiệm người dùng liền mạch (Magnetic Timeline), sức mạnh của AI (Auto Captions, Cutout), và kho tài nguyên phong phú, sản phẩm "Universal Video Downloader & Editor" sẽ có vị thế vững chắc để cạnh tranh trực tiếp với CapCut, đáp ứng cơn khát công cụ sáng tạo của hàng triệu người dùng trên toàn cầu.
