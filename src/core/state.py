@@ -46,5 +46,8 @@ class StateManager(QObject):
     def get_assets(self) -> List[Dict]:
         return list(self.state["media_pool"]["assets"].values())
 
+    def get_asset(self, asset_id: str) -> Dict:
+        return self.state["media_pool"]["assets"].get(asset_id)
+
 # Global instance
 state_manager = StateManager()

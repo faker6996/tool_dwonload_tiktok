@@ -1,6 +1,6 @@
 import sys
 from PyQt6.QtWidgets import (QApplication, QMainWindow, QWidget, QHBoxLayout, QVBoxLayout, QLabel,
-                             QListWidget, QStackedWidget, QListWidgetItem, QLineEdit)
+                             QListWidget, QStackedWidget, QListWidgetItem, QLineEdit, QPushButton)
 from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QIcon, QPixmap
 
@@ -117,11 +117,33 @@ class MainWindow(QMainWindow):
         """)
         header_layout.addWidget(self.page_title_label)
         header_layout.addStretch()
-        
-        # Version label
-        version_label = QLabel("v1.0.0")
-        version_label.setStyleSheet("color: rgba(139, 157, 195, 0.5); font-size: 12px;")
-        header_layout.addWidget(version_label)
+
+        # Export button (only visible on Edit page)
+        self.export_btn = QPushButton("🎬 Export Video")
+        self.export_btn.setVisible(False)
+        self.export_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.export_btn.setStyleSheet("""
+            QPushButton {
+                background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
+                                            stop:0 #58a6ff, stop:1 #8b5cf6);
+                color: white;
+                font-weight: bold;
+                padding: 8px 20px;
+                border-radius: 6px;
+                border: none;
+                font-size: 13px;
+            }
+            QPushButton:hover {
+                background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
+                                            stop:0 #6bb4ff, stop:1 #9d6fff);
+            }
+            QPushButton:pressed {
+                background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
+                                            stop:0 #4a8fd9, stop:1 #7645d9);
+            }
+        """)
+        self.export_btn.clicked.connect(self.open_export_dialog)
+        header_layout.addWidget(self.export_btn)
         
         right_layout.addWidget(header_widget)
 
@@ -168,6 +190,9 @@ class MainWindow(QMainWindow):
             return
 
         self.stacked_widget.setCurrentIndex(index)
+
+        # Toggle export button visibility (only for Edit page)
+        self.export_btn.setVisible(index == 1)
         # Update header title based on selected menu
         menu_titles = ["📥 Download", "✂️ Edit", "📚 Document"]
         if 0 <= index < len(menu_titles):
@@ -176,6 +201,11 @@ class MainWindow(QMainWindow):
     def open_settings(self):
         from src.ui.dialogs.settings_dialog import SettingsDialog
         dialog = SettingsDialog(self)
+        dialog.exec()
+
+    def open_export_dialog(self):
+        from src.ui.dialogs.export_dialog import ExportDialog
+        dialog = ExportDialog(self)
         dialog.exec()
 
     def apply_styles(self):

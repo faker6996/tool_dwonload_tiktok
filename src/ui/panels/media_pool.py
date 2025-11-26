@@ -1,10 +1,42 @@
 from PyQt6.QtWidgets import (QFrame, QVBoxLayout, QLabel, QListWidget, QListWidgetItem, 
                              QAbstractItemView, QPushButton, QFileDialog, QWidget, QHBoxLayout, QLineEdit, QComboBox, QTabWidget)
-from PyQt6.QtCore import Qt, QSize
-from PyQt6.QtGui import QIcon, QDragEnterEvent, QDropEvent
+from PyQt6.QtCore import Qt, QSize, QMimeData, QUrl
+from PyQt6.QtGui import QIcon, QDragEnterEvent, QDropEvent, QDrag
 
 from src.core.state import state_manager
 from src.ui.threads import IngestionThread
+
+class DraggableListWidget(QListWidget):
+    def startDrag(self, supportedActions):
+        item = self.currentItem()
+        if not item:
+            return
+            
+        asset_id = item.data(Qt.ItemDataRole.UserRole)
+        asset = state_manager.get_asset(asset_id)
+        if not asset:
+            return
+            
+        # Create MIME data
+        mime_data = QMimeData()
+        
+        # 1. Set File URL (for compatibility with Player/Timeline expecting files)
+        if "target_url" in asset:
+            url = QUrl.fromLocalFile(asset["target_url"])
+            mime_data.setUrls([url])
+            
+        # 2. Set Custom Data (Asset ID)
+        mime_data.setText(asset_id)
+        
+        drag = QDrag(self)
+        drag.setMimeData(mime_data)
+        
+        # Set Pixmap for drag visualization
+        pixmap = item.icon().pixmap(100, 56)
+        drag.setPixmap(pixmap)
+        drag.setHotSpot(pixmap.rect().center())
+        
+        drag.exec(supportedActions)
 
 class MediaPool(QFrame):
     def __init__(self):
@@ -81,7 +113,7 @@ class MediaPool(QFrame):
         local_layout.addLayout(filter_layout)
         
         # Asset List
-        self.asset_list = QListWidget()
+        self.asset_list = DraggableListWidget()
         self.asset_list.setViewMode(QListWidget.ViewMode.IconMode)
         self.asset_list.setIconSize(QSize(100, 56))
         self.asset_list.setResizeMode(QListWidget.ResizeMode.Adjust)

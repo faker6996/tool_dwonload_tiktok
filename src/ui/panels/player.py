@@ -35,16 +35,92 @@ class OverlayItem(QGraphicsObject):
         super().mouseReleaseEvent(event)
         self.changed.emit()
 
+class DroppableGraphicsView(QGraphicsView):
+    def __init__(self, scene, parent=None):
+        super().__init__(scene, parent)
+        self.setAcceptDrops(True)
+
+    def dragEnterEvent(self, event):
+        if event.mimeData().hasUrls():
+            event.accept()
+        else:
+            event.ignore()
+
+    def dragMoveEvent(self, event):
+        if event.mimeData().hasUrls():
+            event.accept()
+        else:
+            event.ignore()
+
+    def dropEvent(self, event):
+        if event.mimeData().hasUrls():
+            # Forward to parent Player if possible, or handle here
+            # Since we need access to Player methods, let's emit a signal or call parent
+            # But parent might be the layout container.
+            # Easiest is to let Player handle it by passing the event or callback.
+            # Or better: Player sets itself as parent and we call parent.
+            if self.parent():
+                # Try to find Player instance
+                parent = self.parent()
+                while parent:
+                    if hasattr(parent, "handle_drop"):
+                        parent.handle_drop(event)
+                        return
+                    parent = parent.parent()
+            
+            event.accept()
+        else:
+            event.ignore()
+
 class Player(QFrame):
     transform_changed = pyqtSignal() # Emitted when user interacts with overlay
 
     def __init__(self):
         super().__init__()
         self.setObjectName("panel")
+        self.setAcceptDrops(True) 
         self.current_clip = None
         self.scene = QGraphicsScene()
         
         self.setup_ui()
+
+    def handle_drop(self, event):
+        if event.mimeData().hasUrls():
+            files = [u.toLocalFile() for u in event.mimeData().urls()]
+            if files:
+                file_path = files[0]
+                self.load_clip_from_path(file_path)
+
+    def load_clip_from_path(self, file_path):
+        # Create a temporary clip for preview
+        from src.core.timeline.clip import Clip
+        from src.core.state import state_manager
+        
+        asset = None
+        for a in state_manager.state["media_pool"]["assets"].values():
+            if a["target_url"] == file_path:
+                asset = a
+                break
+        
+        duration = 5.0
+        if asset:
+            duration = asset["metadata"].get("duration", 5.0)
+            
+        clip = Clip(
+            asset_id=file_path,
+            name=file_path.split("/")[-1],
+            duration=duration
+        )
+        self.set_clip(clip)
+
+    def dragEnterEvent(self, event):
+        if event.mimeData().hasUrls():
+            event.accept()
+        else:
+            event.ignore()
+
+    def dropEvent(self, event):
+        self.handle_drop(event)
 
     def setup_ui(self):
         layout = QVBoxLayout(self)
@@ -69,7 +145,7 @@ class Player(QFrame):
         layout.addWidget(header)
         
         # Graphics View
-        self.view = QGraphicsView(self.scene)
+        self.view = DroppableGraphicsView(self.scene, self)
         self.view.setStyleSheet("border: none; background-color: #000;")
         self.view.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.view.setRenderHint(self.view.renderHints().Antialiasing)
