@@ -1,205 +1,207 @@
 from PyQt6.QtWidgets import (QFrame, QVBoxLayout, QLabel, QWidget, QGridLayout, 
-                             QDoubleSpinBox, QSlider, QComboBox, QScrollArea, QCheckBox)
+                             QSpinBox, QDoubleSpinBox, QSlider, QComboBox, QHBoxLayout, QScrollArea, QAbstractSpinBox)
 from PyQt6.QtCore import Qt, pyqtSignal
-from src.core.timeline.clip import Clip
 
 class Inspector(QFrame):
-    clip_changed = pyqtSignal()
+    clip_changed = pyqtSignal(object)
 
     def __init__(self):
         super().__init__()
         self.setObjectName("panel")
-        self.setMinimumWidth(320) # Ensure enough space for controls
+        self.setMinimumWidth(320)
         self.current_clip = None
-        
         self.setup_ui()
 
     def setup_ui(self):
-        layout = QVBoxLayout(self)
-        layout.setContentsMargins(0, 0, 0, 0)
-        
-        # Header
+        main_layout = QVBoxLayout(self)
+        main_layout.setContentsMargins(0, 0, 0, 0)
+        main_layout.setSpacing(0)
+
+        # Title
         title = QLabel("Inspector")
         title.setObjectName("panel_title")
-        layout.addWidget(title)
-        
+        main_layout.addWidget(title)
+
         # Scroll Area
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
-        scroll.setStyleSheet("border: none; background-color: transparent;")
+        scroll.setFrameShape(QFrame.Shape.NoFrame)
+        scroll.setStyleSheet("background: transparent;")
         
-        self.content_widget = QWidget()
-        self.content_layout = QVBoxLayout(self.content_widget)
+        content_widget = QWidget()
+        self.content_layout = QVBoxLayout(content_widget)
+        self.content_layout.setContentsMargins(15, 15, 15, 15)
+        self.content_layout.setSpacing(20)
         self.content_layout.setAlignment(Qt.AlignmentFlag.AlignTop)
-        self.content_layout.setSpacing(15)
-        self.content_layout.setContentsMargins(10, 10, 10, 10)
-        
-        scroll.setWidget(self.content_widget)
-        layout.addWidget(scroll)
-        
-        # Transform Section
-        self.add_section_header("Transform")
+
+        # 1. TRANSFORM Section
+        self.create_section_header("TRANSFORM")
         
         # Position
-        self.pos_x = self.create_spinbox_row("Position X", -1920, 1920)
-        self.pos_y = self.create_spinbox_row("Position Y", -1080, 1080)
+        pos_layout = QGridLayout()
+        pos_layout.setSpacing(10)
         
+        self.pos_x = self.create_spinbox("Position X", -1920, 1920, 0)
+        self.pos_y = self.create_spinbox("Position Y", -1080, 1080, 0)
+        
+        pos_layout.addWidget(QLabel("Position X"), 0, 0)
+        pos_layout.addWidget(QLabel("Position Y"), 0, 1)
+        pos_layout.addWidget(self.pos_x, 1, 0)
+        pos_layout.addWidget(self.pos_y, 1, 1)
+        
+        self.content_layout.addLayout(pos_layout)
+
         # Scale
-        self.scale_x = self.create_spinbox_row("Scale X", 0.1, 5.0, 0.1, 1.0)
-        self.scale_y = self.create_spinbox_row("Scale Y", 0.1, 5.0, 0.1, 1.0)
-        
+        scale_container, self.scale_slider, self.scale_spin = self.create_slider_input("Scale", 1, 500, 100, "%")
+        self.content_layout.addWidget(scale_container)
+
         # Rotation
-        self.rotation = self.create_spinbox_row("Rotation", -360, 360)
+        rotation_container, self.rotation_slider, self.rotation_spin = self.create_slider_input("Rotation", -360, 360, 0, "°")
+        self.content_layout.addWidget(rotation_container)
+
+        self.add_separator()
+
+        # 2. OPACITY Section
+        self.create_section_header("OPACITY")
         
-        # Opacity Section
-        self.add_section_header("Opacity")
-        self.opacity = self.create_slider_row("Opacity", 0, 100, 100)
+        opacity_container, self.opacity_slider, self.opacity_spin = self.create_slider_input("Opacity", 0, 100, 100, "%")
+        self.content_layout.addWidget(opacity_container)
         
         # Blend Mode
-        self.add_section_header("Blend Mode")
-        self.blend_mode = QComboBox()
-        self.blend_mode.addItems(["Normal", "Screen", "Multiply", "Overlay", "Darken", "Lighten"])
-        self.blend_mode.currentTextChanged.connect(self.on_value_changed)
-        self.content_layout.addWidget(self.blend_mode)
+        blend_layout = QVBoxLayout()
+        blend_layout.setSpacing(5)
+        blend_label = QLabel("Blend Mode")
+        blend_label.setStyleSheet("color: #8b9dc3; font-size: 12px;")
+        self.blend_combo = QComboBox()
+        self.blend_combo.addItems(["Normal", "Multiply", "Screen", "Overlay", "Darken", "Lighten"])
+        self.blend_combo.currentTextChanged.connect(self.update_clip_transform)
+        blend_layout.addWidget(blend_label)
+        blend_layout.addWidget(self.blend_combo)
+        self.content_layout.addLayout(blend_layout)
 
-        # Audio Section
-        self.add_section_header("Audio")
-        self.volume = self.create_slider_row("Volume", 0, 200, 100) # 100 = 1.0
+        self.add_separator()
+
+        # 3. AUDIO Section
+        self.create_section_header("AUDIO")
         
-        # Mute
-        self.mute_chk = QCheckBox("Mute")
-        self.mute_chk.stateChanged.connect(self.on_value_changed)
-        self.content_layout.addWidget(self.mute_chk)
-        
-        # Fades
-        self.fade_in = self.create_spinbox_row("Fade In (s)", 0.0, 10.0, 0.1, 0.0)
-        self.fade_out = self.create_spinbox_row("Fade Out (s)", 0.0, 10.0, 0.1, 0.0)
+        volume_container, self.volume_slider, self.volume_spin = self.create_slider_input("Volume", 0, 200, 100, "%")
+        self.content_layout.addWidget(volume_container)
 
-        # Color Section
-        self.add_section_header("Color Correction")
-        self.brightness = self.create_slider_row("Brightness", -100, 100, 0) # -1.0 to 1.0
-        self.contrast = self.create_slider_row("Contrast", 0, 200, 100) # 0.0 to 2.0
-        self.saturation = self.create_slider_row("Saturation", 0, 200, 100) # 0.0 to 2.0
-        self.hue = self.create_slider_row("Hue", -180, 180, 0)
+        scroll.setWidget(content_widget)
+        main_layout.addWidget(scroll)
 
-        # Disable by default
-        self.set_enabled(False)
+        # Connect Signals
+        self.pos_x.valueChanged.connect(self.update_clip_transform)
+        self.pos_y.valueChanged.connect(self.update_clip_transform)
 
-    def add_section_header(self, text):
+    def create_section_header(self, text):
+        header = QHBoxLayout()
         label = QLabel(text)
-        label.setStyleSheet("font-weight: bold; color: #90CAF9; margin-top: 10px;")
-        self.content_layout.addWidget(label)
+        label.setStyleSheet("font-weight: bold; color: #58a6ff; font-size: 12px; letter-spacing: 1px;")
+        header.addWidget(label)
+        header.addStretch()
+        self.content_layout.addLayout(header)
 
-    def create_spinbox_row(self, label_text, min_val, max_val, step=1.0, default=0.0):
+    def create_spinbox(self, tooltip, min_val, max_val, default):
+        spin = QDoubleSpinBox()
+        spin.setRange(min_val, max_val)
+        spin.setValue(default)
+        spin.setToolTip(tooltip)
+        spin.setButtonSymbols(QAbstractSpinBox.ButtonSymbols.NoButtons)
+        return spin
+
+    def create_slider_input(self, label_text, min_val, max_val, default, suffix=""):
         container = QWidget()
         layout = QGridLayout(container)
         layout.setContentsMargins(0, 0, 0, 0)
         
         label = QLabel(label_text)
-        spinbox = QDoubleSpinBox()
-        spinbox.setRange(min_val, max_val)
-        spinbox.setSingleStep(step)
-        spinbox.setValue(default)
-        spinbox.valueChanged.connect(self.on_value_changed)
+        label.setStyleSheet("color: #8b9dc3;")
         
-        layout.addWidget(label, 0, 0)
-        layout.addWidget(spinbox, 0, 1)
-        
-        self.content_layout.addWidget(container)
-        return spinbox
-
-    def create_slider_row(self, label_text, min_val, max_val, default):
-        container = QWidget()
-        layout = QGridLayout(container)
-        layout.setContentsMargins(0, 0, 0, 0)
-        
-        label = QLabel(label_text)
         slider = QSlider(Qt.Orientation.Horizontal)
         slider.setRange(min_val, max_val)
         slider.setValue(default)
-        slider.valueChanged.connect(self.on_value_changed)
         
-        layout.addWidget(label, 0, 0)
-        layout.addWidget(slider, 0, 1)
-        
-        self.content_layout.addWidget(container)
-        return slider
+        spin = QSpinBox()
+        spin.setRange(min_val, max_val)
+        spin.setValue(default)
+        spin.setSuffix(suffix)
+        spin.setButtonSymbols(QSpinBox.ButtonSymbols.NoButtons)
+        spin.setFixedWidth(60)
+        spin.setAlignment(Qt.AlignmentFlag.AlignRight)
 
-    def set_clip(self, clip: Clip):
+        # Sync
+        slider.valueChanged.connect(spin.setValue)
+        spin.valueChanged.connect(slider.setValue)
+        
+        # Connect to update handler
+        slider.valueChanged.connect(self.update_clip_transform)
+
+        layout.addWidget(label, 0, 0)
+        layout.addWidget(spin, 0, 1)
+        layout.addWidget(slider, 1, 0, 1, 2)
+        
+        return container, slider, spin
+
+    def add_separator(self):
+        line = QFrame()
+        line.setFrameShape(QFrame.Shape.HLine)
+        line.setFrameShadow(QFrame.Shadow.Sunken)
+        line.setStyleSheet("background-color: #2C2C2C; margin: 10px 0;")
+        self.content_layout.addWidget(line)
+
+    def set_clip(self, clip):
         self.current_clip = clip
+        self.setEnabled(clip is not None)
+        
         if not clip:
-            self.set_enabled(False)
             return
-            
-        self.set_enabled(True)
+
         # Block signals to prevent feedback loop
         self.block_signals(True)
         
-        self.pos_x.setValue(clip.position_x)
-        self.pos_y.setValue(clip.position_y)
-        self.scale_x.setValue(clip.scale_x)
-        self.scale_y.setValue(clip.scale_y)
-        self.rotation.setValue(clip.rotation)
-        self.opacity.setValue(int(clip.opacity * 100))
-        self.blend_mode.setCurrentText(clip.blend_mode)
+        # Update UI from Clip Data
+        # Using safe access with defaults
+        self.pos_x.setValue(getattr(clip, 'position_x', 0))
+        self.pos_y.setValue(getattr(clip, 'position_y', 0))
+        self.scale_slider.setValue(int(getattr(clip, 'scale_x', 1.0) * 100))
+        self.rotation_slider.setValue(int(getattr(clip, 'rotation', 0)))
         
-        self.volume.setValue(int(clip.volume * 100))
-        self.mute_chk.setChecked(clip.muted)
-        self.fade_in.setValue(clip.fade_in)
-        self.fade_out.setValue(clip.fade_out)
+        self.opacity_slider.setValue(int(getattr(clip, 'opacity', 1.0) * 100))
+        self.blend_combo.setCurrentText(getattr(clip, 'blend_mode', 'Normal'))
         
-        self.brightness.setValue(int(clip.brightness * 100))
-        self.contrast.setValue(int(clip.contrast * 100))
-        self.saturation.setValue(int(clip.saturation * 100))
-        self.hue.setValue(int(clip.hue))
+        self.volume_slider.setValue(int(getattr(clip, 'volume', 1.0) * 100))
         
         self.block_signals(False)
 
-    def set_enabled(self, enabled):
-        self.content_widget.setEnabled(enabled)
-
-    def block_signals(self, blocked):
-        self.pos_x.blockSignals(blocked)
-        self.pos_y.blockSignals(blocked)
-        self.scale_x.blockSignals(blocked)
-        self.scale_y.blockSignals(blocked)
-        self.rotation.blockSignals(blocked)
-        self.opacity.blockSignals(blocked)
-        self.blend_mode.blockSignals(blocked)
-        self.volume.blockSignals(blocked)
-        self.mute_chk.blockSignals(blocked)
-        self.fade_in.blockSignals(blocked)
-        self.fade_out.blockSignals(blocked)
-        self.brightness.blockSignals(blocked)
-        self.contrast.blockSignals(blocked)
-        self.saturation.blockSignals(blocked)
-        self.hue.blockSignals(blocked)
-
-    def on_value_changed(self):
+    def update_clip_transform(self):
         if not self.current_clip:
             return
             
-        # Update clip model
-        # TODO: Use Command Pattern for Undo/Redo here!
+        # Update Clip Data from UI
         self.current_clip.position_x = self.pos_x.value()
         self.current_clip.position_y = self.pos_y.value()
-        self.current_clip.scale_x = self.scale_x.value()
-        self.current_clip.scale_y = self.scale_y.value()
-        self.current_clip.rotation = self.rotation.value()
-        self.current_clip.opacity = self.opacity.value() / 100.0
-        self.current_clip.blend_mode = self.blend_mode.currentText()
+        self.current_clip.scale_x = self.scale_slider.value() / 100.0
+        self.current_clip.scale_y = self.scale_slider.value() / 100.0 # Uniform scale for now
+        self.current_clip.rotation = self.rotation_slider.value()
         
-        self.current_clip.volume = self.volume.value() / 100.0
-        self.current_clip.muted = self.mute_chk.isChecked()
-        self.current_clip.fade_in = self.fade_in.value()
-        self.current_clip.fade_out = self.fade_out.value()
+        self.current_clip.opacity = self.opacity_slider.value() / 100.0
+        self.current_clip.blend_mode = self.blend_combo.currentText()
         
-        self.current_clip.brightness = self.brightness.value() / 100.0
-        self.current_clip.contrast = self.contrast.value() / 100.0
-        self.current_clip.saturation = self.saturation.value() / 100.0
-        self.current_clip.hue = self.hue.value()
+        self.current_clip.volume = self.volume_slider.value() / 100.0
         
-        # Emit signal or notify system to redraw player
-        # For now, we assume direct object modification is enough for MVP, 
-        # but Player needs to know to repaint.
-        self.clip_changed.emit()
+        # Emit signal
+        self.clip_changed.emit(self.current_clip)
+
+    def block_signals(self, block):
+        self.pos_x.blockSignals(block)
+        self.pos_y.blockSignals(block)
+        self.scale_slider.blockSignals(block)
+        self.scale_spin.blockSignals(block)
+        self.rotation_slider.blockSignals(block)
+        self.rotation_spin.blockSignals(block)
+        self.opacity_slider.blockSignals(block)
+        self.opacity_spin.blockSignals(block)
+        self.blend_combo.blockSignals(block)
+        self.volume_slider.blockSignals(block)
+        self.volume_spin.blockSignals(block)

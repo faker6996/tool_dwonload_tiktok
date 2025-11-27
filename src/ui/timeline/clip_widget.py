@@ -1,6 +1,6 @@
-from PyQt6.QtWidgets import QFrame, QLabel, QHBoxLayout
+from PyQt6.QtWidgets import QFrame, QLabel, QHBoxLayout, QWidget
 from PyQt6.QtCore import Qt, QMimeData, pyqtSignal, QRect
-from PyQt6.QtGui import QDrag, QPainter, QPixmap, QColor
+from PyQt6.QtGui import QDrag, QPainter, QPixmap, QColor, QPen, QBrush
 
 class ClipWidget(QFrame):
     """
@@ -15,62 +15,75 @@ class ClipWidget(QFrame):
         self.waveform_pixmap = None
         
         self.setObjectName("clip_widget")
-        self.update_style()
+        # No stylesheet here, we use paintEvent for full control
         
         # Load waveform if exists
         if self.clip.waveform_path:
             self.waveform_pixmap = QPixmap(self.clip.waveform_path)
+            
+        # We don't use layout for labels anymore, we draw them
         
-        layout = QHBoxLayout(self)
-        layout.setContentsMargins(5, 0, 5, 0)
-        
-        name_label = QLabel(clip.name)
-        name_label.setStyleSheet("color: #E0E0E0; font-size: 11px; background: transparent; border: none;")
-        layout.addWidget(name_label)
-        
-    def update_style(self):
-        border_color = "#90CAF9" if self.is_selected else "#505050"
-        bg_color = "#4A4A4A" if self.is_selected else "#3A3A3A"
-        
-        # We use paintEvent for background to support waveform, so we simplify stylesheet
-        self.setStyleSheet(f"""
-            #clip_widget {{
-                border: 1px solid {border_color};
-                border-radius: 4px;
-            }}
-            #clip_widget:hover {{
-                border-color: #90CAF9;
-            }}
-        """)
-
     def set_selected(self, selected: bool):
         self.is_selected = selected
-        self.update_style()
         self.update() # Trigger repaint
 
     def paintEvent(self, event):
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
         
-        # Draw Background
-        bg_color = QColor("#4A4A4A") if self.is_selected else QColor("#3A3A3A")
-        painter.fillRect(self.rect(), bg_color)
+        rect = self.rect()
         
-        # Draw Waveform
-        if self.waveform_pixmap:
-            # Draw waveform with some transparency or blending
-            target_rect = self.rect().adjusted(2, 2, -2, -2)
-            painter.setOpacity(0.6)
+        # Determine Colors based on Type
+        is_audio = getattr(self.clip, 'is_audio', False) or self.clip.asset_id.endswith(('.mp3', '.wav'))
+        # Note: Clip model might not have is_audio, check asset extension or metadata if possible.
+        # For now, let's assume if it has waveform it's audio, or check extension.
+        
+        if is_audio:
+            bg_color = QColor("#1e3a2f") # Dark Green
+            border_color = QColor("#10B981") # Bright Green
+            accent_color = QColor("#059669")
+        else:
+            bg_color = QColor("#2b3a4f") # Dark Blue
+            border_color = QColor("#58a6ff") # Bright Blue
+            accent_color = QColor("#1f6feb")
+            
+        if self.is_selected:
+            bg_color = bg_color.lighter(130)
+            border_color = QColor("#FFFFFF")
+            
+        # Draw Background
+        painter.setPen(Qt.PenStyle.NoPen)
+        painter.setBrush(QBrush(bg_color))
+        painter.drawRoundedRect(rect, 4, 4)
+        
+        # Draw "Film Strip" holes for Video
+        if not is_audio:
+            painter.setBrush(QBrush(QColor(0, 0, 0, 50)))
+            # Top holes
+            for x in range(0, rect.width(), 15):
+                painter.drawRect(x + 2, 2, 8, 4)
+            # Bottom holes
+            for x in range(0, rect.width(), 15):
+                painter.drawRect(x + 2, rect.height() - 6, 8, 4)
+        
+        # Draw Waveform for Audio
+        if is_audio and self.waveform_pixmap:
+            target_rect = rect.adjusted(2, 10, -2, -10)
+            painter.setOpacity(0.8)
             painter.drawPixmap(target_rect, self.waveform_pixmap)
             painter.setOpacity(1.0)
             
-        # Draw Text Content (for Subtitles)
-        if self.clip.clip_type == "text":
-            painter.setPen(QColor("#FFFFFF"))
-            painter.drawText(self.rect().adjusted(5, 0, -5, 0), Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft, self.clip.text_content)
-            
-        # Draw Border (handled by stylesheet usually, but we can reinforce if needed)
-        # super().paintEvent(event) # Stylesheet handling
+        # Draw Border
+        painter.setBrush(Qt.BrushStyle.NoBrush)
+        pen = QPen(border_color)
+        pen.setWidth(2 if self.is_selected else 1)
+        painter.setPen(pen)
+        painter.drawRoundedRect(rect, 4, 4)
+        
+        # Draw Text
+        painter.setPen(QColor("#FFFFFF"))
+        text_rect = rect.adjusted(10, 0, -10, 0)
+        painter.drawText(text_rect, Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft, self.clip.name)
 
     def mousePressEvent(self, event):
         if event.button() == Qt.MouseButton.LeftButton:
@@ -83,6 +96,6 @@ class ClipWidget(QFrame):
         if event.buttons() == Qt.MouseButton.LeftButton:
             drag = QDrag(self)
             mime = QMimeData()
-            mime.setText(self.clip.id) # Pass clip ID
+            mime.setText(str(self.clip.asset_id)) # Pass ID
             drag.setMimeData(mime)
             drag.exec(Qt.DropAction.MoveAction)
