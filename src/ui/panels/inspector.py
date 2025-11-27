@@ -8,7 +8,7 @@ class Inspector(QFrame):
     def __init__(self):
         super().__init__()
         self.setObjectName("panel")
-        self.setMinimumWidth(320)
+        self.setMinimumWidth(300)
         self.current_clip = None
         self.setup_ui()
 
@@ -30,8 +30,8 @@ class Inspector(QFrame):
         
         content_widget = QWidget()
         self.content_layout = QVBoxLayout(content_widget)
-        self.content_layout.setContentsMargins(15, 15, 15, 15)
-        self.content_layout.setSpacing(20)
+        self.content_layout.setContentsMargins(16, 16, 16, 16)
+        self.content_layout.setSpacing(24)
         self.content_layout.setAlignment(Qt.AlignmentFlag.AlignTop)
 
         # 1. TRANSFORM Section
@@ -69,9 +69,9 @@ class Inspector(QFrame):
         
         # Blend Mode
         blend_layout = QVBoxLayout()
-        blend_layout.setSpacing(5)
+        blend_layout.setSpacing(8)
         blend_label = QLabel("Blend Mode")
-        blend_label.setStyleSheet("color: #8b9dc3; font-size: 12px;")
+        blend_label.setStyleSheet("color: #a1a1aa; font-size: 12px;")
         self.blend_combo = QComboBox()
         self.blend_combo.addItems(["Normal", "Multiply", "Screen", "Overlay", "Darken", "Lighten"])
         self.blend_combo.currentTextChanged.connect(self.update_clip_transform)
@@ -97,7 +97,7 @@ class Inspector(QFrame):
     def create_section_header(self, text):
         header = QHBoxLayout()
         label = QLabel(text)
-        label.setStyleSheet("font-weight: bold; color: #58a6ff; font-size: 12px; letter-spacing: 1px;")
+        label.setStyleSheet("font-weight: 600; color: #a1a1aa; font-size: 11px; letter-spacing: 0.5px;")
         header.addWidget(label)
         header.addStretch()
         self.content_layout.addLayout(header)
@@ -114,9 +114,10 @@ class Inspector(QFrame):
         container = QWidget()
         layout = QGridLayout(container)
         layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(8)
         
         label = QLabel(label_text)
-        label.setStyleSheet("color: #8b9dc3;")
+        label.setStyleSheet("color: #a1a1aa;")
         
         slider = QSlider(Qt.Orientation.Horizontal)
         slider.setRange(min_val, max_val)
@@ -147,7 +148,7 @@ class Inspector(QFrame):
         line = QFrame()
         line.setFrameShape(QFrame.Shape.HLine)
         line.setFrameShadow(QFrame.Shadow.Sunken)
-        line.setStyleSheet("background-color: #2C2C2C; margin: 10px 0;")
+        line.setStyleSheet("background-color: #27272a; margin: 8px 0;")
         self.content_layout.addWidget(line)
 
     def set_clip(self, clip):

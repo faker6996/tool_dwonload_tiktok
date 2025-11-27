@@ -4,3 +4,4 @@ pyktok
 playwright
 pyinstaller
 yt-dlp
+qtawesome

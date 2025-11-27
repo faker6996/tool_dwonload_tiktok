@@ -13,28 +13,25 @@ class RulerWidget(QWidget):
         super().__init__()
         self.setFixedHeight(30)
         self.pixels_per_second = pixels_per_second
-        self.setStyleSheet("background-color: #1E1E1E; border-bottom: 1px solid #333;")
+        self.setStyleSheet("background-color: #18181b; border-bottom: 1px solid #27272a;")
 
     def paintEvent(self, event):
         painter = QPainter(self)
-        painter.setPen(QColor("#8b9dc3"))
-        painter.setFont(QFont("Arial", 8))
+        painter.setPen(QColor("#a1a1aa"))
+        painter.setFont(QFont("Inter", 8))
         
         rect = self.rect()
         # Draw background
-        painter.fillRect(rect, QColor("#1E1E1E"))
+        painter.fillRect(rect, QColor("#18181b"))
         
         # Draw ticks
-        # Start from 100px offset (Track Header width)
         start_x = 120 
         
-        # Draw ticks every second
-        for i in range(0, 100): # Draw 100 seconds for now
+        for i in range(0, 100): 
             x = start_x + (i * self.pixels_per_second)
             if x > rect.width():
                 break
                 
-            # Major tick (every 5 seconds)
             if i % 5 == 0:
                 painter.drawLine(x, 15, x, 30)
                 painter.drawText(x + 2, 12, f"00:{i:02d}")
@@ -42,7 +39,7 @@ class RulerWidget(QWidget):
                 painter.drawLine(x, 22, x, 30)
                 
         # Draw bottom border
-        painter.setPen(QColor("#333"))
+        painter.setPen(QColor("#27272a"))
         painter.drawLine(0, 29, rect.width(), 29)
 
 class TimelineWidget(QFrame):
@@ -76,10 +73,10 @@ class TimelineWidget(QFrame):
         # Scroll Area for Tracks
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
-        scroll.setStyleSheet("border: none; background-color: #121212;")
+        scroll.setStyleSheet("border: none; background-color: #131315;")
         
         self.tracks_container = QWidget()
-        self.tracks_container.setStyleSheet("background-color: #121212;")
+        self.tracks_container.setStyleSheet("background-color: #131315;")
         self.tracks_layout = QVBoxLayout(self.tracks_container)
         self.tracks_layout.setContentsMargins(0, 0, 0, 0)
         self.tracks_layout.setSpacing(1)
@@ -89,19 +86,9 @@ class TimelineWidget(QFrame):
         layout.addWidget(scroll)
         
         # Playhead (Overlay)
-        # For MVP, we can draw playhead in paintEvent of tracks_container or a separate overlay widget.
-        # A simple approach is a line widget on top of everything, but layout management is tricky.
-        # Let's add a vertical line to the tracks_container paintEvent? 
-        # But tracks_container contains widgets.
-        # Better: Use a custom layout or just draw it on Ruler and have a vertical line widget in the scroll area?
-        # Let's add a "PlayheadWidget" that is transparent and sits on top.
-        # For now, let's just draw the playhead on the Ruler and maybe a line in the tracks area if possible.
-        # Or simpler: Just a red line widget added to the scroll area layout? No, needs absolute positioning.
-        
-        # Let's stick to basic layout for now and maybe add a simple line widget that moves.
         self.playhead = QFrame(self.tracks_container)
         self.playhead.setFixedWidth(2)
-        self.playhead.setStyleSheet("background-color: #EF4444;")
+        self.playhead.setStyleSheet("background-color: #ef4444;")
         self.playhead.move(120, 0) # Start at 0s (offset by header)
         self.playhead.resize(2, 1000) # Tall enough
         self.playhead.show()

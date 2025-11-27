@@ -1,7 +1,9 @@
 from PyQt6.QtWidgets import (QFrame, QVBoxLayout, QLabel, QListWidget, QListWidgetItem, 
                              QAbstractItemView, QPushButton, QFileDialog, QWidget, QHBoxLayout, QLineEdit, QComboBox)
 from PyQt6.QtCore import Qt, QSize, QMimeData, QUrl
-from PyQt6.QtGui import QIcon, QDragEnterEvent, QDropEvent, QDrag, QPixmap
+from PyQt6.QtGui import QIcon, QDragEnterEvent, QDropEvent, QDrag, QPixmap, QColor, QBrush
+
+import os
 
 from src.core.state import state_manager
 from src.ui.threads import IngestionThread
@@ -38,20 +40,81 @@ class DraggableListWidget(QListWidget):
         
         drag.exec(supportedActions)
 
-class MediaPool(QFrame):
+class MediaPool(QWidget):
     def __init__(self):
         super().__init__()
-        self.setObjectName("panel")
-        self.setAcceptDrops(True)
-        
+        self.setObjectName("panel") # Keep original object name for styling if needed
+        self.setAcceptDrops(True) # Keep original drag/drop functionality
         self.setup_ui()
         
-        # Connect to State Manager
+        # Connect to State Manager (Keep original connection)
         state_manager.media_imported.connect(self.on_asset_imported)
+
+    def setup_ui(self):
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(0)
+        
+        # --- Header (Import & Search) ---
+        header_container = QWidget()
+        header_container.setStyleSheet("background-color: #18181b; border-bottom: 1px solid #27272a;")
+        header_layout = QVBoxLayout(header_container)
+        header_layout.setContentsMargins(10, 10, 10, 10)
+        header_layout.setSpacing(10)
+        
+        # Import Button
+        self.import_btn = QPushButton("Import Media")
+        self.import_btn.setObjectName("primary")
+        self.import_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.import_btn.setFixedHeight(36)
+        self.import_btn.clicked.connect(self.open_file_dialog) # Connect to existing open_file_dialog
+        header_layout.addWidget(self.import_btn)
+        
+        # Search Input
+        self.search_input = QLineEdit()
+        self.search_input.setPlaceholderText("Search assets...")
+        self.search_input.textChanged.connect(self.filter_assets)
+        header_layout.addWidget(self.search_input)
+        
+        layout.addWidget(header_container)
+        
+        # --- Asset Grid ---
+        self.asset_list = DraggableListWidget() # Use DraggableListWidget
+        self.asset_list.setViewMode(QListWidget.ViewMode.IconMode)
+        self.asset_list.setResizeMode(QListWidget.ResizeMode.Adjust)
+        self.asset_list.setGridSize(QSize(110, 130))
+        self.asset_list.setSpacing(10)
+        self.asset_list.setIconSize(QSize(100, 80))
+        self.asset_list.setMovement(QListWidget.Movement.Static)
+        self.asset_list.setSelectionMode(QAbstractItemView.SelectionMode.ExtendedSelection) # Keep original selection mode
+        self.asset_list.setDragEnabled(True)
+        self.asset_list.setStyleSheet("""
+            QListWidget {
+                background-color: #18181b;
+                border: none;
+                padding: 10px;
+            }
+            QListWidget::item {
+                background-color: #27272a;
+                border-radius: 5px;
+                color: #a1a1aa;
+                padding: 5px;
+                text-align: center;
+            }
+            QListWidget::item:selected {
+                background-color: #3f3f46;
+                color: white;
+            }
+            QListWidget::item:hover {
+                background-color: #3f3f46;
+            }
+        """)
+        
+        layout.addWidget(self.asset_list)
 
     def open_file_dialog(self):
         file_dialog = QFileDialog(self)
-        file_dialog.setNameFilter("Media Files (*.mp4 *.mov *.avi *.mkv *.mp3 *.wav *.png *.jpg)")
+        file_dialog.setNameFilter("Media Files (*.mp4 *.mov *.avi *.mkv *.mp3 *.wav *.png *.jpg *.jpeg)") # Added .jpeg
         file_dialog.setFileMode(QFileDialog.FileMode.ExistingFiles)
         
         if file_dialog.exec():
@@ -59,75 +122,6 @@ class MediaPool(QFrame):
             if file_paths:
                 self.import_media(file_paths)
 
-    def setup_ui(self):
-        layout = QVBoxLayout(self)
-        layout.setContentsMargins(15, 15, 15, 15)
-        layout.setSpacing(15)
-        
-        # 1. Import Button
-        self.import_btn = QPushButton("  Import Media")
-        self.import_btn.setObjectName("primary")
-        self.import_btn.setIcon(QIcon("assets/icons/import.png")) # Placeholder
-        self.import_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.import_btn.setFixedHeight(40)
-        self.import_btn.setStyleSheet("""
-            QPushButton#primary {
-                font-size: 14px;
-                font-weight: bold;
-                border-radius: 6px;
-            }
-        """)
-        self.import_btn.clicked.connect(self.open_file_dialog)
-        layout.addWidget(self.import_btn)
-        
-        # 2. Search Bar
-        self.search_input = QLineEdit()
-        self.search_input.setPlaceholderText("Search assets...")
-        self.search_input.textChanged.connect(self.filter_assets)
-        self.search_input.setStyleSheet("""
-            QLineEdit {
-                background-color: #0d1117;
-                border: 1px solid #30363d;
-                padding: 8px 12px;
-                border-radius: 6px;
-                color: #c9d1d9;
-            }
-            QLineEdit:focus {
-                border: 1px solid #58a6ff;
-            }
-        """)
-        layout.addWidget(self.search_input)
-        
-        # 3. Asset Grid
-        self.asset_list = DraggableListWidget()
-        self.asset_list.setViewMode(QListWidget.ViewMode.IconMode)
-        self.asset_list.setIconSize(QSize(100, 60))
-        self.asset_list.setResizeMode(QListWidget.ResizeMode.Adjust)
-        self.asset_list.setGridSize(QSize(110, 90))
-        self.asset_list.setSpacing(10)
-        self.asset_list.setSelectionMode(QAbstractItemView.SelectionMode.ExtendedSelection)
-        self.asset_list.setDragEnabled(True)
-        self.asset_list.setStyleSheet("""
-            QListWidget {
-                background-color: transparent;
-                border: none;
-            }
-            QListWidget::item {
-                background-color: #21262d;
-                border-radius: 6px;
-                color: #c9d1d9;
-                padding: 5px;
-            }
-            QListWidget::item:selected {
-                background-color: #1f6feb;
-                color: white;
-            }
-            QListWidget::item:hover {
-                background-color: #30363d;
-            }
-        """)
-        layout.addWidget(self.asset_list)
-        
     def dragEnterEvent(self, event: QDragEnterEvent):
         if event.mimeData().hasUrls():
             event.acceptProposedAction()
@@ -166,8 +160,8 @@ class MediaPool(QFrame):
             item.setIcon(QIcon(thumb_path))
         else:
             # Create a placeholder pixmap
-            pixmap = QPixmap(100, 60)
-            pixmap.fill(Qt.GlobalColor.darkGray)
+            pixmap = QPixmap(100, 80) # Updated size to match iconSize
+            pixmap.fill(QColor("#27272a")) # Use QColor for fill
             item.setIcon(QIcon(pixmap))
             
         self.asset_list.addItem(item)

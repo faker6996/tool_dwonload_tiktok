@@ -1,5 +1,6 @@
-from PyQt6.QtWidgets import QWidget, QVBoxLayout, QSplitter, QTabWidget, QLabel
-from PyQt6.QtCore import Qt
+from PyQt6.QtWidgets import QWidget, QVBoxLayout, QSplitter, QTabWidget, QLabel, QFrame, QToolButton, QButtonGroup, QHBoxLayout
+from PyQt6.QtCore import Qt, QSize
+import qtawesome as qta
 
 from ..panels.media_pool import MediaPool
 from ..panels.player import Player
@@ -22,28 +23,27 @@ class EditPage(QWidget):
         main_splitter.setHandleWidth(1)
         main_splitter.setChildrenCollapsible(False)
 
-        # Top Horizontal Splitter (Left Panel | Player | Inspector)
+        # Top Horizontal Splitter (Nav | Media | Player | Inspector)
         top_splitter = QSplitter(Qt.Orientation.Horizontal)
         top_splitter.setHandleWidth(1)
         top_splitter.setChildrenCollapsible(False)
 
-        # --- Left Panel (Tabs) ---
+        # 2. Media Panel (Tabs)
         self.left_panel = QTabWidget()
         self.left_panel.setMinimumWidth(300)
         
         self.media_pool = MediaPool()
         self.effects = Effects()
-        # Placeholder for Text tab
-        self.text_panel = QWidget()
+        self.text_panel = QWidget() # Placeholder
         
         self.left_panel.addTab(self.media_pool, "Media")
         self.left_panel.addTab(self.effects, "Effects")
         self.left_panel.addTab(self.text_panel, "Text")
 
-        # --- Center Panel (Player) ---
+        # 3. Center Panel (Player)
         self.player = Player()
         
-        # --- Right Panel (Inspector) ---
+        # 4. Right Panel (Inspector)
         self.inspector = Inspector()
         self.inspector.setMinimumWidth(300)
 
@@ -53,7 +53,7 @@ class EditPage(QWidget):
         top_splitter.addWidget(self.inspector)
 
         # Set initial sizes for top splitter
-        top_splitter.setStretchFactor(0, 3)  # Left Panel
+        top_splitter.setStretchFactor(0, 3)  # Media
         top_splitter.setStretchFactor(1, 6)  # Player
         top_splitter.setStretchFactor(2, 3)  # Inspector
 
