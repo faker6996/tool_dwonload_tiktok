@@ -1,9 +1,22 @@
-from PyQt6.QtWidgets import (QFrame, QVBoxLayout, QLabel, QWidget, QGridLayout, 
-                             QSpinBox, QDoubleSpinBox, QSlider, QComboBox, QHBoxLayout, QScrollArea, QAbstractSpinBox)
+from PyQt6.QtWidgets import (
+    QFrame,
+    QVBoxLayout,
+    QLabel,
+    QWidget,
+    QGridLayout,
+    QSpinBox,
+    QDoubleSpinBox,
+    QSlider,
+    QComboBox,
+    QHBoxLayout,
+    QScrollArea,
+    QAbstractSpinBox,
+)
 from PyQt6.QtCore import Qt, pyqtSignal
 
 class Inspector(QFrame):
     clip_changed = pyqtSignal(object)
+    aspect_ratio_changed = pyqtSignal(str)
 
     def __init__(self):
         super().__init__()
@@ -50,6 +63,18 @@ class Inspector(QFrame):
         pos_layout.addWidget(self.pos_y, 1, 1)
         
         self.content_layout.addLayout(pos_layout)
+
+        # Aspect Ratio Presets
+        aspect_layout = QVBoxLayout()
+        aspect_layout.setSpacing(8)
+        aspect_label = QLabel("Aspect Ratio")
+        aspect_label.setStyleSheet("color: #a1a1aa; font-size: 12px;")
+        self.aspect_combo = QComboBox()
+        self.aspect_combo.addItems(["Original", "16:9", "9:16", "4:3", "1:1"])
+        self.aspect_combo.currentTextChanged.connect(self.on_aspect_ratio_changed)
+        aspect_layout.addWidget(aspect_label)
+        aspect_layout.addWidget(self.aspect_combo)
+        self.content_layout.addLayout(aspect_layout)
 
         # Scale
         scale_container, self.scale_slider, self.scale_spin = self.create_slider_input("Scale", 1, 500, 100, "%")
@@ -174,6 +199,9 @@ class Inspector(QFrame):
         self.volume_slider.setValue(int(getattr(clip, 'volume', 1.0) * 100))
         
         self.block_signals(False)
+
+    def on_aspect_ratio_changed(self, text: str):
+        self.aspect_ratio_changed.emit(text)
 
     def update_clip_transform(self):
         if not self.current_clip:

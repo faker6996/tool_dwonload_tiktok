@@ -1,5 +1,15 @@
-from PyQt6.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QLabel, 
-                             QLineEdit, QPushButton, QComboBox, QFileDialog, QProgressBar)
+from PyQt6.QtWidgets import (
+    QDialog,
+    QVBoxLayout,
+    QHBoxLayout,
+    QLabel,
+    QLineEdit,
+    QPushButton,
+    QComboBox,
+    QFileDialog,
+    QProgressBar,
+    QMessageBox,
+)
 from PyQt6.QtCore import Qt
 from src.core.export.renderer import render_engine
 
@@ -75,8 +85,39 @@ class ExportDialog(QDialog):
     def start_export(self):
         output_path = self.path_input.text()
         if not output_path:
+            QMessageBox.warning(self, "Export Video", "Please choose an output path.")
             return
-            
+
+        # Collect timeline clips from parent EditPage -> Timeline -> TimelineWidget
+        timeline_clips = []
+        parent = self.parent()
+        try:
+            if parent and hasattr(parent, "timeline"):
+                timeline_panel = parent.timeline
+                if hasattr(timeline_panel, "timeline_widget"):
+                    timeline_widget = timeline_panel.timeline_widget
+                    # For now we export only the main video track.
+                    main_track = getattr(timeline_widget, "main_track", None)
+                    if main_track and getattr(main_track, "clips", None):
+                        for clip in main_track.clips:
+                            timeline_clips.append(
+                                {
+                                    "path": clip.asset_id,
+                                    "start": clip.start_time,
+                                    "duration": clip.length,
+                                }
+                            )
+        except Exception as e:
+            print(f"Error collecting timeline clips: {e}")
+
+        if not timeline_clips:
+            QMessageBox.warning(
+                self,
+                "Export Video",
+                "Timeline is empty. Please add at least one clip before exporting.",
+            )
+            return
+
         settings = {
             "resolution": self.res_combo.currentText(),
             "fps": int(self.fps_combo.currentText())
@@ -89,8 +130,7 @@ class ExportDialog(QDialog):
         self.progress_bar.setValue(0)
         
         # Start Render
-        # TODO: Pass actual timeline clips from StateManager or TimelineWidget
-        render_engine.render_timeline([], output_path, settings)
+        render_engine.render_timeline(timeline_clips, output_path, settings)
 
     def update_progress(self, value):
         self.progress_bar.setValue(value)
@@ -100,6 +140,9 @@ class ExportDialog(QDialog):
         self.cancel_btn.setEnabled(True)
         if success:
             self.progress_bar.setFormat("Done!")
-            # self.accept() # Optional: close on finish
+            QMessageBox.information(self, "Export Video", message or "Export finished.")
+            # Optionally close dialog on success
+            # self.accept()
         else:
             self.progress_bar.setFormat("Error")
+            QMessageBox.critical(self, "Export Video", message or "Export failed.")

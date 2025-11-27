@@ -65,8 +65,10 @@ class EditPage(QWidget):
         main_splitter.addWidget(self.timeline)
 
         # Set initial sizes for main splitter
+        # Use a default ratio but ensure timeline is visible
         main_splitter.setStretchFactor(0, 6)
         main_splitter.setStretchFactor(1, 4)
+        main_splitter.setSizes([500, 300]) # Explicitly set sizes to ensure visibility on load
 
         layout.addWidget(main_splitter)
         
@@ -74,9 +76,11 @@ class EditPage(QWidget):
         if hasattr(self.timeline, 'timeline_widget'):
             self.timeline.timeline_widget.clip_selected.connect(self.inspector.set_clip)
             self.timeline.timeline_widget.clip_selected.connect(self.player.set_clip)
-            
+
         self.inspector.clip_changed.connect(self.player.update_overlay)
         self.player.transform_changed.connect(lambda: self.inspector.set_clip(self.player.current_clip))
+        if hasattr(self.inspector, "aspect_ratio_changed"):
+            self.inspector.aspect_ratio_changed.connect(self.player.set_aspect_ratio)
 
     def open_export_dialog(self):
         from ..dialogs.export_dialog import ExportDialog
