@@ -49,7 +49,6 @@ class OverlayItem(QGraphicsObject):
             return
         self.prepareGeometryChange()
         self.rect_size = rect_size
-        self.changed.emit()
     
     def mouseReleaseEvent(self, event):
         super().mouseReleaseEvent(event)
@@ -164,7 +163,12 @@ class Player(QFrame):
         if self.aspect_ratio_preset == "Original":
             self.canvas_width = size.width()
             self.canvas_height = size.height()
-            self.scene.setSceneRect(0, 0, self.canvas_width, self.canvas_height)
+
+        # Update scene rect and background to match the canvas.
+        self.scene.setSceneRect(0, 0, self.canvas_width, self.canvas_height)
+        if hasattr(self, "background_rect"):
+            self.background_rect.setRect(0, 0, self.canvas_width, self.canvas_height)
+
         # In all cases, make sure video fills the current canvas.
         self.video_item.setSize(QSizeF(self.canvas_width, self.canvas_height))
 
@@ -342,7 +346,14 @@ class Player(QFrame):
         self.scene.setSceneRect(0, 0, self.canvas_width, self.canvas_height)
         
         # Background
-        self.scene.addRect(0, 0, self.canvas_width, self.canvas_height, QPen(Qt.PenStyle.NoPen), QBrush(QColor("#000000")))
+        self.background_rect = self.scene.addRect(
+            0,
+            0,
+            self.canvas_width,
+            self.canvas_height,
+            QPen(Qt.PenStyle.NoPen),
+            QBrush(QColor("#000000")),
+        )
         
         # Video Text
         self.video_text = self.scene.addText("No Media")
@@ -385,6 +396,8 @@ class Player(QFrame):
             self.canvas_width, self.canvas_height = aspect_map[preset]
 
         self.scene.setSceneRect(0, 0, self.canvas_width, self.canvas_height)
+        if hasattr(self, "background_rect"):
+            self.background_rect.setRect(0, 0, self.canvas_width, self.canvas_height)
         self.video_item.setSize(QSizeF(self.canvas_width, self.canvas_height))
 
         if hasattr(self, "overlay_item"):
@@ -523,13 +536,10 @@ class Player(QFrame):
         pos = self.overlay_item.pos()
         self.current_clip.position_x = pos.x() - center_x
         self.current_clip.position_y = pos.y() - center_y
-        
-        # Notify Inspector
+
+        # Notify Inspector and re-apply unified transform logic
         self.transform_changed.emit()
-        
-        # Update Video Item
-        self.video_item.setTransformOriginPoint(self.canvas_width/2, self.canvas_height/2)
-        self.video_item.setPos(self.current_clip.position_x, self.current_clip.position_y)
+        self.update_overlay()
 
     def on_proxy_toggled(self, state):
         use_proxy = (state == Qt.CheckState.Checked.value)
