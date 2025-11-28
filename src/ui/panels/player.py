@@ -5,6 +5,25 @@ from PyQt6.QtGui import QBrush, QColor, QPen, QTransform, QPainter
 from PyQt6.QtMultimedia import QMediaPlayer, QAudioOutput
 from PyQt6.QtMultimediaWidgets import QGraphicsVideoItem
 from src.core.timeline.clip import Clip
+from contextlib import contextmanager
+
+
+@contextmanager
+def block_signals(*objects):
+    """
+    Temporarily block Qt signals for the provided objects.
+    Ensures signals are always restored, even if an exception occurs.
+    """
+    previous_states = []
+    for obj in objects:
+        if obj is not None:
+            previous_states.append((obj, obj.signalsBlocked()))
+            obj.blockSignals(True)
+    try:
+        yield
+    finally:
+        for obj, prev in previous_states:
+            obj.blockSignals(prev)
 
 class OverlayItem(QGraphicsObject):
     changed = pyqtSignal()
@@ -83,6 +102,19 @@ class DroppableGraphicsView(QGraphicsView):
             event.accept()
         else:
             event.ignore()
+
+    def wheelEvent(self, event):
+        """
+        Forward mouse wheel events up to a parent that can handle scaling.
+        This lets the Player decide how to interpret the wheel (e.g. scale clip).
+        """
+        parent = self.parent()
+        while parent:
+            if hasattr(parent, "handle_wheel"):
+                parent.handle_wheel(event)
+                return
+            parent = parent.parent()
+        super().wheelEvent(event)
 
 class Player(QFrame):
     transform_changed = pyqtSignal() # Emitted when user interacts with overlay
@@ -359,12 +391,27 @@ class Player(QFrame):
         self.video_text = self.scene.addText("No Media")
         self.video_text.setDefaultTextColor(QColor("#505050"))
         self.video_text.setScale(5) # Larger text
+        self.center_text_in_canvas()
         
         # Overlay Item (Transform Controls)
         self.overlay_item = OverlayItem(rect_size=self.canvas_width) # Match canvas size
         self.overlay_item.hide()
         self.overlay_item.changed.connect(self.on_overlay_changed)
         self.scene.addItem(self.overlay_item)
+
+    def center_text_in_canvas(self):
+        """
+        Center the overlay text within the current canvas dimensions.
+        Safe to call whenever canvas size or text changes.
+        """
+        if not hasattr(self, "video_text") or self.video_text is None:
+            return
+
+        br = self.video_text.boundingRect()
+        scale = self.video_text.scale()
+        x = self.canvas_width / 2 - (br.width() * scale) / 2
+        y = self.canvas_height / 2 - (br.height() * scale) / 2
+        self.video_text.setPos(x, y)
 
     def resizeEvent(self, event):
         super().resizeEvent(event)
@@ -422,6 +469,7 @@ class Player(QFrame):
             self.overlay_item.hide()
             self.video_item.hide()
             self.video_text.setPlainText("No Media")
+            self.center_text_in_canvas()
             self.media_player.stop()
             self.media_player.setSource(QUrl())
             return
@@ -429,15 +477,9 @@ class Player(QFrame):
         # Show Video
         self.video_item.show()
         self.video_item.setSize(QSizeF(self.canvas_width, self.canvas_height))
-        self.video_item.setPos(0, 0) # Video item is top-left based
-        
+
         self.video_text.setPlainText(f"Preview: {clip.name}")
-        
-        # Center text
-        br = self.video_text.boundingRect()
-        scale = self.video_text.scale()
-        self.video_text.setPos(self.canvas_width/2 - (br.width()*scale)/2, 
-                               self.canvas_height/2 - (br.height()*scale)/2)
+        self.center_text_in_canvas()
         
         self.overlay_item.show()
         self.update_overlay()
@@ -485,45 +527,42 @@ class Player(QFrame):
             return
 
         # Block signals to prevent feedback loop from Inspector updates
-        self.overlay_item.blockSignals(True)
+        with block_signals(self.overlay_item):
+            # Canvas center
+            center_x = self.canvas_width / 2
+            center_y = self.canvas_height / 2
+
+            # Clip center in scene coordinates
+            clip_center_x = center_x + self.current_clip.position_x
+            clip_center_y = center_y + self.current_clip.position_y
+
+            # Overlay (center-based)
+            self.overlay_item.setPos(clip_center_x, clip_center_y)
+            self.overlay_item.setRotation(self.current_clip.rotation)
+            self.overlay_item.setScale(self.current_clip.scale_x) 
         
-        # Canvas center
-        center_x = self.canvas_width / 2
-        center_y = self.canvas_height / 2
-
-        # Clip center in scene coordinates
-        clip_center_x = center_x + self.current_clip.position_x
-        clip_center_y = center_y + self.current_clip.position_y
-
-        # Overlay (center-based)
-        self.overlay_item.setPos(clip_center_x, clip_center_y)
-        self.overlay_item.setRotation(self.current_clip.rotation)
-        self.overlay_item.setScale(self.current_clip.scale_x) 
+            # Update Video Item Transform matches Overlay
+            # Since overlay and video are same size and centered, they share pos
+            # BUT QGraphicsVideoItem is top-left based, Overlay is center based.
+            # We need to adjust.
+            # Actually, let's keep video item filling the screen and just transform it.
+            # Wait, if we transform video item, we need to set its origin to center.
         
-        # Update Video Item Transform matches Overlay
-        # Since overlay and video are same size and centered, they share pos
-        # BUT QGraphicsVideoItem is top-left based, Overlay is center based.
-        # We need to adjust.
-        # Actually, let's keep video item filling the screen and just transform it.
-        # Wait, if we transform video item, we need to set its origin to center.
-        
-        self.video_item.setTransformOriginPoint(self.canvas_width / 2, self.canvas_height / 2)
+            self.video_item.setTransformOriginPoint(self.canvas_width / 2, self.canvas_height / 2)
 
-        # Video item is top-left based, so convert center->top-left
-        video_x = clip_center_x - (self.canvas_width / 2)
-        video_y = clip_center_y - (self.canvas_height / 2)
-        self.video_item.setPos(video_x, video_y)
-        self.video_item.setRotation(self.current_clip.rotation)
-        self.video_item.setScale(self.current_clip.scale_x)
+            # Video item is top-left based, so convert center->top-left
+            video_x = clip_center_x - (self.canvas_width / 2)
+            video_y = clip_center_y - (self.canvas_height / 2)
+            self.video_item.setPos(video_x, video_y)
+            self.video_item.setRotation(self.current_clip.rotation)
+            self.video_item.setScale(self.current_clip.scale_x)
 
-        # Apply opacity (0.0 - 1.0)
-        self.video_item.setOpacity(self.current_clip.opacity)
+            # Apply opacity and blend mode
+            self.apply_blend_mode()
 
         # Apply volume (0.0 - 1.0)
         if hasattr(self, "audio_output"):
             self.audio_output.setVolume(self.current_clip.volume)
-        
-        self.overlay_item.blockSignals(False)
 
     def on_overlay_changed(self):
         if not self.current_clip:
@@ -541,6 +580,39 @@ class Player(QFrame):
         self.transform_changed.emit()
         self.update_overlay()
 
+    def apply_blend_mode(self):
+        """
+        Apply the clip's blend mode to the video item.
+        For now we approximate blend modes by adjusting opacity, since the
+        current player renders a single layer over a solid background.
+        This can be extended later when multi-layer compositing is added.
+        """
+        if not self.current_clip:
+            return
+
+        base_opacity = self.current_clip.opacity
+        mode = getattr(self.current_clip, "blend_mode", "Normal")
+
+        # Simple approximation: tweak opacity per mode
+        if mode == "Normal":
+            opacity = base_opacity
+        elif mode == "Multiply":
+            # Darker feel
+            opacity = base_opacity * 0.8
+        elif mode == "Screen":
+            # Slightly brighter / lighter
+            opacity = min(1.0, base_opacity + 0.15)
+        elif mode == "Overlay":
+            opacity = min(1.0, base_opacity + 0.05)
+        elif mode == "Darken":
+            opacity = base_opacity * 0.7
+        elif mode == "Lighten":
+            opacity = min(1.0, base_opacity + 0.25)
+        else:
+            opacity = base_opacity
+
+        self.video_item.setOpacity(opacity)
+
     def on_proxy_toggled(self, state):
         use_proxy = (state == Qt.CheckState.Checked.value)
         print(f"Proxy Mode: {'ON' if use_proxy else 'OFF'}")
@@ -548,3 +620,32 @@ class Player(QFrame):
         if self.current_clip and self.current_clip.proxy_path:
             # Logic to switch source would go here
             pass
+
+    def handle_wheel(self, event):
+        """
+        Handle mouse wheel over the player view to scale the current clip.
+        Scroll up = zoom in, scroll down = zoom out.
+        """
+        if not self.current_clip:
+            return
+
+        delta = event.angleDelta().y()
+        if delta == 0:
+            return
+
+        # Each notch (120) changes scale by 5%
+        step = 0.05
+        direction = 1 if delta > 0 else -1
+        new_scale = self.current_clip.scale_x + direction * step
+
+        # Clamp to a reasonable range
+        new_scale = max(0.1, min(new_scale, 5.0))
+
+        # Update clip scale (uniform)
+        self.current_clip.scale_x = new_scale
+        self.current_clip.scale_y = new_scale
+
+        # Apply to scene and notify inspector
+        self.update_overlay()
+        self.transform_changed.emit()
+        event.accept()

@@ -92,9 +92,9 @@ class MainWindow(QMainWindow):
         self.nav_group.setExclusive(True)
         self.nav_group.idClicked.connect(self.on_nav_clicked)
         
-        # Add Nav Items
-        self.add_nav_item(nav_layout, "download", "Download", 0)
-        self.add_nav_item(nav_layout, "edit", "Edit", 1)
+        # Add Nav Items (Edit first, Download second)
+        self.add_nav_item(nav_layout, "edit", "Edit", 0)
+        self.add_nav_item(nav_layout, "download", "Download", 1)
         self.add_nav_item(nav_layout, "file-alt", "Document", 2)
         self.add_nav_item(nav_layout, "cog", "Settings", 3)
         
@@ -104,19 +104,21 @@ class MainWindow(QMainWindow):
         # 2. Stacked Widget
         self.stacked_widget = QStackedWidget()
         
-        self.download_page = DownloadPage()
         self.edit_page = EditPage()
+        self.download_page = DownloadPage()
         self.document_page = DocumentPage()
         
-        self.stacked_widget.addWidget(self.download_page)
-        self.stacked_widget.addWidget(self.edit_page)
-        self.stacked_widget.addWidget(self.document_page)
+        # Index mapping must match nav IDs:
+        # 0: Edit, 1: Download, 2: Document
+        self.stacked_widget.addWidget(self.edit_page)      # index 0
+        self.stacked_widget.addWidget(self.download_page)  # index 1
+        self.stacked_widget.addWidget(self.document_page)  # index 2
         
         content_layout.addWidget(self.stacked_widget)
         
         main_layout.addWidget(content_widget)
         
-        # Set default page (Download)
+        # Set default page (Edit)
         self.nav_group.button(0).setChecked(True)
         self.on_nav_clicked(0)
 
@@ -167,7 +169,7 @@ class MainWindow(QMainWindow):
         self.stacked_widget.setCurrentIndex(id)
         
         # Update UI based on page
-        if id == 1: # Edit Page
+        if id == 0: # Edit Page
             self.export_btn.show()
             self.title_label.setText("Video Editor")
         else:

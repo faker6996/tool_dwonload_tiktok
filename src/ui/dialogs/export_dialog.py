@@ -105,6 +105,9 @@ class ExportDialog(QDialog):
                                     "path": clip.asset_id,
                                     "start": clip.start_time,
                                     "duration": clip.length,
+                                    # Pass transform info for future use (e.g. blend modes)
+                                    "blend_mode": getattr(clip, "blend_mode", "Normal"),
+                                    "opacity": getattr(clip, "opacity", 1.0),
                                 }
                             )
         except Exception as e:

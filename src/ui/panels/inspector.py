@@ -11,8 +11,31 @@ from PyQt6.QtWidgets import (
     QHBoxLayout,
     QScrollArea,
     QAbstractSpinBox,
+    QPushButton,
 )
 from PyQt6.QtCore import Qt, pyqtSignal
+from contextlib import contextmanager
+
+
+class NoWheelSpinBox(QSpinBox):
+    """SpinBox that ignores mouse wheel to avoid accidental value changes."""
+
+    def wheelEvent(self, event):
+        event.ignore()
+
+
+class NoWheelDoubleSpinBox(QDoubleSpinBox):
+    """DoubleSpinBox that ignores mouse wheel to avoid accidental value changes."""
+
+    def wheelEvent(self, event):
+        event.ignore()
+
+
+class NoWheelSlider(QSlider):
+    """Slider that ignores mouse wheel so scrolling only scrolls the panel."""
+
+    def wheelEvent(self, event):
+        event.ignore()
 
 class Inspector(QFrame):
     clip_changed = pyqtSignal(object)
@@ -76,9 +99,20 @@ class Inspector(QFrame):
         aspect_layout.addWidget(self.aspect_combo)
         self.content_layout.addLayout(aspect_layout)
 
-        # Scale
+        # Scale (only numeric + Reset, no visible slider)
         scale_container, self.scale_slider, self.scale_spin = self.create_slider_input("Scale", 1, 500, 100, "%")
         self.content_layout.addWidget(scale_container)
+
+        # Hide the slider and replace its row with a Reset button.
+        scale_layout = scale_container.layout()
+        if scale_layout is not None and self.scale_slider is not None:
+            scale_layout.removeWidget(self.scale_slider)
+            self.scale_slider.hide()
+
+            self.scale_reset_btn = QPushButton("Reset")
+            self.scale_reset_btn.setFixedWidth(60)
+            self.scale_reset_btn.clicked.connect(self.reset_scale)
+            scale_layout.addWidget(self.scale_reset_btn, 1, 0, 1, 2)
 
         # Rotation
         rotation_container, self.rotation_slider, self.rotation_spin = self.create_slider_input("Rotation", -360, 360, 0, "°")
@@ -128,7 +162,7 @@ class Inspector(QFrame):
         self.content_layout.addLayout(header)
 
     def create_spinbox(self, tooltip, min_val, max_val, default):
-        spin = QDoubleSpinBox()
+        spin = NoWheelDoubleSpinBox()
         spin.setRange(min_val, max_val)
         spin.setValue(default)
         spin.setToolTip(tooltip)
@@ -144,11 +178,11 @@ class Inspector(QFrame):
         label = QLabel(label_text)
         label.setStyleSheet("color: #a1a1aa;")
         
-        slider = QSlider(Qt.Orientation.Horizontal)
+        slider = NoWheelSlider(Qt.Orientation.Horizontal)
         slider.setRange(min_val, max_val)
         slider.setValue(default)
         
-        spin = QSpinBox()
+        spin = NoWheelSpinBox()
         spin.setRange(min_val, max_val)
         spin.setValue(default)
         spin.setSuffix(suffix)
@@ -176,6 +210,22 @@ class Inspector(QFrame):
         line.setStyleSheet("background-color: #27272a; margin: 8px 0;")
         self.content_layout.addWidget(line)
 
+    def reset_scale(self):
+        """
+        Reset clip scale back to 100% and sync UI + player.
+        """
+        if not self.current_clip:
+            return
+
+        with block_signals(self.scale_spin, self.scale_slider):
+            self.scale_spin.setValue(100)
+            if self.scale_slider is not None:
+                self.scale_slider.setValue(100)
+
+        # update_clip_transform will read scale from the slider,
+        # which we just synced above (even though it's hidden).
+        self.update_clip_transform()
+
     def set_clip(self, clip):
         self.current_clip = clip
         self.setEnabled(clip is not None)
@@ -183,22 +233,30 @@ class Inspector(QFrame):
         if not clip:
             return
 
-        # Block signals to prevent feedback loop
-        self.block_signals(True)
-        
-        # Update UI from Clip Data
-        # Using safe access with defaults
-        self.pos_x.setValue(getattr(clip, 'position_x', 0))
-        self.pos_y.setValue(getattr(clip, 'position_y', 0))
-        self.scale_slider.setValue(int(getattr(clip, 'scale_x', 1.0) * 100))
-        self.rotation_slider.setValue(int(getattr(clip, 'rotation', 0)))
-        
-        self.opacity_slider.setValue(int(getattr(clip, 'opacity', 1.0) * 100))
-        self.blend_combo.setCurrentText(getattr(clip, 'blend_mode', 'Normal'))
-        
-        self.volume_slider.setValue(int(getattr(clip, 'volume', 1.0) * 100))
-        
-        self.block_signals(False)
+        # Block signals to prevent feedback loop while UI reflects clip
+        with block_signals(
+            self.pos_x,
+            self.pos_y,
+            self.scale_slider,
+            self.scale_spin,
+            self.rotation_slider,
+            self.rotation_spin,
+            self.opacity_slider,
+            self.opacity_spin,
+            self.blend_combo,
+            self.volume_slider,
+            self.volume_spin,
+        ):
+            # Update UI from Clip Data
+            self.pos_x.setValue(getattr(clip, 'position_x', 0))
+            self.pos_y.setValue(getattr(clip, 'position_y', 0))
+            self.scale_slider.setValue(int(getattr(clip, 'scale_x', 1.0) * 100))
+            self.rotation_slider.setValue(int(getattr(clip, 'rotation', 0)))
+
+            self.opacity_slider.setValue(int(getattr(clip, 'opacity', 1.0) * 100))
+            self.blend_combo.setCurrentText(getattr(clip, 'blend_mode', 'Normal'))
+
+            self.volume_slider.setValue(int(getattr(clip, 'volume', 1.0) * 100))
 
     def on_aspect_ratio_changed(self, text: str):
         self.aspect_ratio_changed.emit(text)
@@ -222,15 +280,20 @@ class Inspector(QFrame):
         # Emit signal
         self.clip_changed.emit(self.current_clip)
 
-    def block_signals(self, block):
-        self.pos_x.blockSignals(block)
-        self.pos_y.blockSignals(block)
-        self.scale_slider.blockSignals(block)
-        self.scale_spin.blockSignals(block)
-        self.rotation_slider.blockSignals(block)
-        self.rotation_spin.blockSignals(block)
-        self.opacity_slider.blockSignals(block)
-        self.opacity_spin.blockSignals(block)
-        self.blend_combo.blockSignals(block)
-        self.volume_slider.blockSignals(block)
-        self.volume_spin.blockSignals(block)
+
+@contextmanager
+def block_signals(*widgets):
+    """
+    Small helper to temporarily block signals on multiple widgets.
+    Ensures signals are restored even if an exception occurs.
+    """
+    previous_states = []
+    for w in widgets:
+        if w is not None:
+            previous_states.append((w, w.signalsBlocked()))
+            w.blockSignals(True)
+    try:
+        yield
+    finally:
+        for w, prev in previous_states:
+            w.blockSignals(prev)
