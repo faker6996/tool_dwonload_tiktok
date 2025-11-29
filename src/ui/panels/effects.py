@@ -1,8 +1,10 @@
 from PyQt6.QtWidgets import QFrame, QVBoxLayout, QLabel, QListWidget, QListWidgetItem, QTabWidget
-from PyQt6.QtCore import Qt, QSize
+from PyQt6.QtCore import Qt, QSize, pyqtSignal
 from PyQt6.QtGui import QIcon
 
 class Effects(QFrame):
+    effect_selected = pyqtSignal(str)  # Name of filter/effect
+
     def __init__(self):
         super().__init__()
         self.setObjectName("panel")
@@ -31,7 +33,8 @@ class Effects(QFrame):
         self.filters_list.setIconSize(QSize(60, 60))
         self.filters_list.setSpacing(10)
         self.filters_list.setResizeMode(QListWidget.ResizeMode.Adjust)
-        
+        self.filters_list.itemClicked.connect(self.on_filter_clicked)
+
         self.populate_filters()
         tabs.addTab(self.filters_list, "Filters")
         
@@ -58,3 +61,9 @@ class Effects(QFrame):
         for s in stickers:
             item = QListWidgetItem(s)
             self.stickers_list.addItem(item)
+
+    def on_filter_clicked(self, item: QListWidgetItem):
+        if not item:
+            return
+        name = item.text()
+        self.effect_selected.emit(name)

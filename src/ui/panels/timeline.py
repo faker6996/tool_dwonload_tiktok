@@ -18,30 +18,6 @@ class Timeline(QFrame):
         title.setObjectName("panel_title")
         header_layout.addWidget(title)
         
-        # Separator
-        separator1 = QWidget()
-        separator1.setFixedWidth(2)
-        separator1.setStyleSheet("background-color: #3E3E3E;")
-        header_layout.addWidget(separator1)
-        
-        # Zoom Controls
-        zoom_label = QLabel("Zoom:")
-        zoom_label.setStyleSheet("color: #8b9dc3; margin-left: 10px;")
-        header_layout.addWidget(zoom_label)
-        
-        self.zoom_slider = QSlider(Qt.Orientation.Horizontal)
-        self.zoom_slider.setRange(1, 100)
-        self.zoom_slider.setValue(20)
-        self.zoom_slider.setFixedWidth(120)
-        self.zoom_slider.valueChanged.connect(self.on_zoom_changed)
-        header_layout.addWidget(self.zoom_slider)
-        
-        # Separator
-        separator2 = QWidget()
-        separator2.setFixedWidth(2)
-        separator2.setStyleSheet("background-color: #3E3E3E;")
-        header_layout.addWidget(separator2)
-        
         # AI Tools Section
         ai_label = QLabel("AI Tools:")
         ai_label.setStyleSheet("color: #8b9dc3; margin-left: 10px;")
@@ -77,9 +53,6 @@ class Timeline(QFrame):
         # Timeline Widget
         self.timeline_widget = TimelineWidget()
         layout.addWidget(self.timeline_widget)
-
-    def on_zoom_changed(self, value):
-        self.timeline_widget.set_zoom(value)
 
     def generate_captions(self):
         # Get selected clip

@@ -7,6 +7,7 @@ from ..panels.player import Player
 from ..panels.inspector import Inspector
 from ..panels.timeline import Timeline
 from ..panels.effects import Effects
+from ..panels.text_panel import TextPanel
 
 class EditPage(QWidget):
     def __init__(self):
@@ -34,7 +35,7 @@ class EditPage(QWidget):
         
         self.media_pool = MediaPool()
         self.effects = Effects()
-        self.text_panel = QWidget() # Placeholder
+        self.text_panel = TextPanel()
         
         self.left_panel.addTab(self.media_pool, "Media")
         self.left_panel.addTab(self.effects, "Effects")
@@ -74,13 +75,57 @@ class EditPage(QWidget):
         
         # Connect Signals
         if hasattr(self.timeline, 'timeline_widget'):
-            self.timeline.timeline_widget.clip_selected.connect(self.inspector.set_clip)
-            self.timeline.timeline_widget.clip_selected.connect(self.player.set_clip)
+            timeline_widget = self.timeline.timeline_widget
+            timeline_widget.clip_selected.connect(self.inspector.set_clip)
+            timeline_widget.clip_selected.connect(self.player.set_clip)
+            # Add text clips to main track
+            self.text_panel.add_text_clip.connect(timeline_widget.add_text_clip)
+
+            # Apply visual effects presets to the currently selected clip
+            self.effects.effect_selected.connect(self.on_effect_selected)
+
+            # Sync player playback position to timeline playhead
+            self.player.playhead_changed.connect(timeline_widget.set_playhead_time)
 
         self.inspector.clip_changed.connect(self.player.update_overlay)
         self.player.transform_changed.connect(lambda: self.inspector.set_clip(self.player.current_clip))
         if hasattr(self.inspector, "aspect_ratio_changed"):
             self.inspector.aspect_ratio_changed.connect(self.player.set_aspect_ratio)
+
+    def on_effect_selected(self, name: str):
+        """
+        Apply a simple color preset to the currently selected clip.
+        For now this only updates clip properties; Player/export can
+        interpret these values as needed.
+        """
+        clip = getattr(self.player, "current_clip", None)
+        if not clip:
+            return
+
+        # Basic preset mapping
+        presets = {
+            "Sepia":     {"brightness": 0.0, "contrast": 1.1, "saturation": 0.8, "hue": 25.0},
+            "B&W":       {"brightness": 0.0, "contrast": 1.0, "saturation": 0.0, "hue": 0.0},
+            "Vivid":     {"brightness": 0.0, "contrast": 1.2, "saturation": 1.5, "hue": 0.0},
+            "Cool":      {"brightness": 0.0, "contrast": 1.0, "saturation": 1.0, "hue": -15.0},
+            "Warm":      {"brightness": 0.0, "contrast": 1.0, "saturation": 1.0, "hue": 15.0},
+            "Vintage":   {"brightness": -0.1, "contrast": 0.9, "saturation": 0.7, "hue": 20.0},
+        }
+
+        preset = presets.get(name)
+        if not preset:
+            # Unknown or custom filter, just store name
+            clip.filter_name = name
+            return
+
+        clip.filter_name = name
+        clip.brightness = preset["brightness"]
+        clip.contrast = preset["contrast"]
+        clip.saturation = preset["saturation"]
+        clip.hue = preset["hue"]
+
+        # Refresh player view with updated clip (if needed later)
+        self.player.update_overlay(clip)
 
     def open_export_dialog(self):
         from ..dialogs.export_dialog import ExportDialog

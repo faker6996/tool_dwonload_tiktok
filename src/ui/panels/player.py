@@ -1,5 +1,19 @@
-from PyQt6.QtWidgets import (QFrame, QVBoxLayout, QGraphicsView, QGraphicsScene, 
-                             QGraphicsRectItem, QGraphicsItem, QLabel, QWidget, QHBoxLayout, QCheckBox, QGraphicsObject, QPushButton, QSlider)
+from PyQt6.QtWidgets import (
+    QFrame,
+    QVBoxLayout,
+    QGraphicsView,
+    QGraphicsScene,
+    QGraphicsRectItem,
+    QGraphicsItem,
+    QLabel,
+    QWidget,
+    QHBoxLayout,
+    QCheckBox,
+    QGraphicsObject,
+    QPushButton,
+    QSlider,
+    QGraphicsColorizeEffect,
+)
 from PyQt6.QtCore import Qt, QRectF, pyqtSignal, QUrl, QSizeF
 from PyQt6.QtGui import QBrush, QColor, QPen, QTransform, QPainter
 from PyQt6.QtMultimedia import QMediaPlayer, QAudioOutput
@@ -117,13 +131,16 @@ class DroppableGraphicsView(QGraphicsView):
         super().wheelEvent(event)
 
 class Player(QFrame):
-    transform_changed = pyqtSignal() # Emitted when user interacts with overlay
+    transform_changed = pyqtSignal()  # Emitted when user interacts with overlay
+    playhead_changed = pyqtSignal(float)  # Timeline time in seconds
 
     def __init__(self):
         super().__init__()
         self.setObjectName("player_panel")
         self.setAcceptDrops(True) 
         self.current_clip = None
+        # Offset (in seconds) of the current clip on the main timeline
+        self.timeline_offset = 0.0
         self.scene = QGraphicsScene()
         self.aspect_ratio_preset = "Original"
         
@@ -181,6 +198,11 @@ class Player(QFrame):
         self.video_item.setAspectRatioMode(Qt.AspectRatioMode.KeepAspectRatio)
         self.scene.addItem(self.video_item)
         self.media_player.setVideoOutput(self.video_item)
+
+        # Color effect placeholder for future color correction presets
+        self.color_effect = QGraphicsColorizeEffect()
+        self.color_effect.setStrength(0.0)
+        self.video_item.setGraphicsEffect(self.color_effect)
         
         # Connect signals
         self.media_player.positionChanged.connect(self.on_position_changed)
@@ -465,6 +487,8 @@ class Player(QFrame):
 
     def set_clip(self, clip: Clip):
         self.current_clip = clip
+        # Remember clip position on main timeline (seconds)
+        self.timeline_offset = getattr(clip, "start_time", 0.0) if clip else 0.0
         if not clip:
             self.overlay_item.hide()
             self.video_item.hide()
@@ -473,8 +497,32 @@ class Player(QFrame):
             self.media_player.stop()
             self.media_player.setSource(QUrl())
             return
-            
-        # Show Video
+
+        is_text_clip = getattr(clip, "clip_type", "video") == "text"
+
+        if is_text_clip:
+            # Hide video playback and show text content instead
+            self.media_player.stop()
+            self.media_player.setSource(QUrl())
+            self.video_item.hide()
+
+            text = clip.text_content or clip.name
+            self.video_text.setPlainText(text)
+
+            # Apply basic font styling from clip
+            font = self.video_text.font()
+            font.setPointSize(getattr(clip, "font_size", 24))
+            self.video_text.setFont(font)
+
+            color = QColor(getattr(clip, "font_color", "#FFFFFF"))
+            self.video_text.setDefaultTextColor(color)
+
+            self.center_text_in_canvas()
+            self.overlay_item.show()
+            self.update_overlay()
+            return
+
+        # Video clip: show video output and preview name
         self.video_item.show()
         self.video_item.setSize(QSizeF(self.canvas_width, self.canvas_height))
 
@@ -505,6 +553,9 @@ class Player(QFrame):
     def on_position_changed(self, position):
         self.scrubber.setValue(position)
         self.timecode_label.setText(self.format_time(position))
+        # position (ms) -> seconds on global timeline
+        timeline_time = (position / 1000.0) + float(self.timeline_offset or 0.0)
+        self.playhead_changed.emit(timeline_time)
 
     def on_duration_changed(self, duration):
         self.scrubber.setRange(0, duration)
@@ -540,25 +591,37 @@ class Player(QFrame):
             self.overlay_item.setPos(clip_center_x, clip_center_y)
             self.overlay_item.setRotation(self.current_clip.rotation)
             self.overlay_item.setScale(self.current_clip.scale_x) 
-        
-            # Update Video Item Transform matches Overlay
-            # Since overlay and video are same size and centered, they share pos
-            # BUT QGraphicsVideoItem is top-left based, Overlay is center based.
-            # We need to adjust.
-            # Actually, let's keep video item filling the screen and just transform it.
-            # Wait, if we transform video item, we need to set its origin to center.
-        
-            self.video_item.setTransformOriginPoint(self.canvas_width / 2, self.canvas_height / 2)
 
-            # Video item is top-left based, so convert center->top-left
-            video_x = clip_center_x - (self.canvas_width / 2)
-            video_y = clip_center_y - (self.canvas_height / 2)
-            self.video_item.setPos(video_x, video_y)
-            self.video_item.setRotation(self.current_clip.rotation)
-            self.video_item.setScale(self.current_clip.scale_x)
+            is_text_clip = getattr(self.current_clip, "clip_type", "video") == "text"
 
-            # Apply opacity and blend mode
-            self.apply_blend_mode()
+            if is_text_clip:
+                # Position text item so its center matches the clip center
+                self.video_text.setScale(self.current_clip.scale_x)
+                br = self.video_text.boundingRect()
+                scaled_width = br.width() * self.video_text.scale()
+                scaled_height = br.height() * self.video_text.scale()
+
+                text_x = clip_center_x - scaled_width / 2
+                text_y = clip_center_y - scaled_height / 2
+                self.video_text.setPos(text_x, text_y)
+                self.video_text.setRotation(self.current_clip.rotation)
+            else:
+                # Update Video Item Transform matches Overlay
+                # Since overlay and video are same size and centered, they share pos
+                # BUT QGraphicsVideoItem is top-left based, Overlay is center based.
+                # We need to adjust.
+                self.video_item.setTransformOriginPoint(self.canvas_width / 2, self.canvas_height / 2)
+
+                # Video item is top-left based, so convert center->top-left
+                video_x = clip_center_x - (self.canvas_width / 2)
+                video_y = clip_center_y - (self.canvas_height / 2)
+                self.video_item.setPos(video_x, video_y)
+                self.video_item.setRotation(self.current_clip.rotation)
+                self.video_item.setScale(self.current_clip.scale_x)
+
+                # Apply opacity, blend mode, and color correction
+                self.apply_blend_mode()
+                self.apply_color_correction()
 
         # Apply volume (0.0 - 1.0)
         if hasattr(self, "audio_output"):
@@ -612,6 +675,47 @@ class Player(QFrame):
             opacity = base_opacity
 
         self.video_item.setOpacity(opacity)
+
+    def apply_color_correction(self):
+        """
+        Apply simple color tint based on the clip's color correction properties.
+        This is an approximation using QGraphicsColorizeEffect so that presets
+        like Sepia / Cool / Warm have some visual feedback in the player.
+        """
+        if not self.current_clip:
+            return
+
+        if getattr(self.current_clip, "clip_type", "video") != "video":
+            # Only apply to video clips for now
+            if hasattr(self, "color_effect"):
+                self.color_effect.setStrength(0.0)
+            return
+
+        if not hasattr(self, "color_effect"):
+            return
+
+        # Derive a tint color from hue and saturation
+        hue = float(getattr(self.current_clip, "hue", 0.0))
+        saturation = float(getattr(self.current_clip, "saturation", 1.0))
+        brightness = float(getattr(self.current_clip, "brightness", 0.0))
+
+        # Normalize hue to 0-359 for QColor.fromHsl
+        h = int((hue + 360.0) % 360.0)
+
+        # Strength depends on how far saturation/brightness deviate from neutral
+        sat_delta = abs(saturation - 1.0)
+        bri_delta = abs(brightness)
+        strength = min(1.0, sat_delta * 0.7 + bri_delta * 0.5)
+
+        if strength <= 0.01:
+            # No visible correction, disable effect
+            self.color_effect.setStrength(0.0)
+            return
+
+        # Build a soft tint color; l=127 gives mid-lightness
+        tint = QColor.fromHsl(h, 180, 127)
+        self.color_effect.setColor(tint)
+        self.color_effect.setStrength(strength)
 
     def on_proxy_toggled(self, state):
         use_proxy = (state == Qt.CheckState.Checked.value)

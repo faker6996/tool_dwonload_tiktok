@@ -43,6 +43,7 @@ class Clip:
     contrast: float = 1.0 # 0.0 to 2.0
     saturation: float = 1.0 # 0.0 to 2.0
     hue: float = 0.0 # -180 to 180
+    filter_name: str = "None"
     
     # Performance
     proxy_path: Optional[str] = None
