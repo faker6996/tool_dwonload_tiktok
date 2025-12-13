@@ -54,11 +54,44 @@ class ExportDialog(QDialog):
         
         layout.addLayout(settings_layout)
         
-        # Progress Bar
+        # Progress Section
+        self.progress_container = QWidget()
+        progress_layout = QVBoxLayout(self.progress_container)
+        progress_layout.setContentsMargins(0, 10, 0, 10)
+        
+        # Status label
+        self.status_label = QLabel("Ready to export")
+        self.status_label.setStyleSheet("color: #a1a1aa; font-size: 13px;")
+        progress_layout.addWidget(self.status_label)
+        
+        # Progress Bar with percentage
         self.progress_bar = QProgressBar()
         self.progress_bar.setValue(0)
-        self.progress_bar.hide()
-        layout.addWidget(self.progress_bar)
+        self.progress_bar.setFormat("%p% - Encoding...")
+        self.progress_bar.setStyleSheet("""
+            QProgressBar {
+                border: 1px solid #27272a;
+                border-radius: 5px;
+                background-color: #18181b;
+                height: 20px;
+                text-align: center;
+                color: white;
+            }
+            QProgressBar::chunk {
+                background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
+                    stop:0 #6366f1, stop:1 #8b5cf6);
+                border-radius: 4px;
+            }
+        """)
+        progress_layout.addWidget(self.progress_bar)
+        
+        # Time estimate label
+        self.time_label = QLabel("")
+        self.time_label.setStyleSheet("color: #71717a; font-size: 11px;")
+        progress_layout.addWidget(self.time_label)
+        
+        self.progress_container.hide()
+        layout.addWidget(self.progress_container)
         
         layout.addStretch()
         
@@ -72,7 +105,7 @@ class ExportDialog(QDialog):
         
         self.export_btn = QPushButton("Export")
         self.export_btn.clicked.connect(self.start_export)
-        self.export_btn.setStyleSheet("background-color: #2196F3; color: white; font-weight: bold;")
+        self.export_btn.setStyleSheet("background-color: #6366f1; color: white; font-weight: bold; padding: 8px 20px;")
         btn_layout.addWidget(self.export_btn)
         
         layout.addLayout(btn_layout)

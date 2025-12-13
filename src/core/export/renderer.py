@@ -161,10 +161,16 @@ class RenderEngine(QObject):
         cmd.extend([
             "-c:v",
             "libx264",
+            "-c:a",
+            "aac",  # Re-encode audio 
             "-pix_fmt",
             "yuv420p",
+            "-movflags",
+            "+faststart",  # Move moov atom to beginning for streaming
             output_path,
         ])
+        
+        print(f"FFmpeg command: {' '.join(cmd)}")
 
         return cmd, concat_path
 
