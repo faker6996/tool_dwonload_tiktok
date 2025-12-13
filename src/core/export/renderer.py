@@ -18,15 +18,19 @@ class RenderEngine(QObject):
             "quality": "High" # High, Medium, Low
         }
 
-    def render_timeline(self, timeline_clips: List[Dict], output_path: str, settings: Dict):
+    def render_timeline(self, timeline_clips: List[Dict], output_path: str, settings: Dict, stickers: List[Dict] = None):
         """
         Render the timeline to a video file.
         timeline_clips: List of clip data (path, start, duration, etc.)
+        stickers: List of sticker data to overlay (content, x, y, scale, rotation)
         """
         self.output_path = output_path
         self.settings.update(settings)
+        self.stickers = stickers or []
         
         print(f"Starting render to {output_path} with settings {self.settings}")
+        if self.stickers:
+            print(f"Rendering {len(self.stickers)} stickers")
 
         if not timeline_clips:
             self.render_finished.emit(False, "No clips to render.")
@@ -93,11 +97,46 @@ class RenderEngine(QObject):
                 path = clip.get("path")
                 if not path:
                     continue
-                # FFmpeg concat demuxer format
-                f.write(f"file '{path.replace(\"'\", \"'\\\\''\")}'\n")
+                # FFmpeg concat demuxer format - escape single quotes
+                escaped_path = path.replace("'", "'\\''")
+                f.write(f"file '{escaped_path}'\n")
 
         resolution = self.settings.get("resolution", "1920x1080")
         fps = int(self.settings.get("fps", 30))
+        
+        # Parse resolution for sticker positioning
+        try:
+            res_w, res_h = map(int, resolution.split("x"))
+        except:
+            res_w, res_h = 1920, 1080
+
+        # Build video filter for stickers
+        vf_parts = []
+        
+        # Add sticker overlays using drawtext filter
+        for sticker in getattr(self, "stickers", []):
+            content = sticker.get("content", "")
+            if not content:
+                continue
+            
+            # Position relative to center - convert to absolute coords
+            x = sticker.get("x", 0)
+            y = sticker.get("y", 0)
+            scale = sticker.get("scale", 1.0)
+            
+            # Convert center-relative to absolute position
+            abs_x = int(res_w / 2 + x)
+            abs_y = int(res_h / 2 + y)
+            
+            # Calculate font size based on scale (base 72pt)
+            fontsize = int(72 * scale)
+            
+            # Escape special characters for FFmpeg
+            escaped_content = content.replace("'", "'\\''").replace(":", "\\:")
+            
+            # drawtext filter - use system emoji font
+            drawtext = f"drawtext=text='{escaped_content}':fontsize={fontsize}:x={abs_x}:y={abs_y}:fontcolor=white"
+            vf_parts.append(drawtext)
 
         cmd = [
             "ffmpeg",
@@ -112,12 +151,20 @@ class RenderEngine(QObject):
             str(fps),
             "-s",
             resolution,
+        ]
+        
+        # Add video filter if we have stickers
+        if vf_parts:
+            vf_string = ",".join(vf_parts)
+            cmd.extend(["-vf", vf_string])
+        
+        cmd.extend([
             "-c:v",
             "libx264",
             "-pix_fmt",
             "yuv420p",
             output_path,
-        ]
+        ])
 
         return cmd, concat_path
 

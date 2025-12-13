@@ -89,6 +89,9 @@ class EditPage(QWidget):
 
             # Sync player playback position to timeline playhead
             self.player.playhead_changed.connect(timeline_widget.set_playhead_time)
+            
+            # Auto-add video to timeline when dropped on Player
+            self.player.media_dropped.connect(timeline_widget.add_clip_from_file)
 
         self.inspector.clip_changed.connect(self.player.update_overlay)
         self.player.transform_changed.connect(lambda: self.inspector.set_clip(self.player.current_clip))

@@ -2,7 +2,7 @@ from PyQt6.QtWidgets import QFrame, QVBoxLayout, QScrollArea, QWidget, QHBoxLayo
 from PyQt6.QtCore import Qt, pyqtSignal, QRect
 from PyQt6.QtGui import QPainter, QColor, QPen, QFont
 from .track_widget import TrackWidget
-from src.core.timeline.track import MagneticTrack
+from src.core.timeline.track import MagneticTrack, Track
 from src.core.timeline.clip import Clip
 from src.core.commands.timeline_commands import AddClipCommand
 from src.core.history import history_manager

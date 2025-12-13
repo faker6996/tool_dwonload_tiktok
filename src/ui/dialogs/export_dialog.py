@@ -121,6 +121,26 @@ class ExportDialog(QDialog):
             )
             return
 
+        # Collect stickers from Player canvas
+        stickers_data = []
+        try:
+            if parent and hasattr(parent, "player"):
+                player = parent.player
+                if hasattr(player, "stickers"):
+                    for sticker_item in player.stickers:
+                        transform = sticker_item.get_transform_data()
+                        stickers_data.append({
+                            "content": sticker_item.content,
+                            "type": sticker_item.sticker_type,
+                            "x": transform.get("position_x", 0),
+                            "y": transform.get("position_y", 0),
+                            "scale": transform.get("scale", 1.0),
+                            "rotation": transform.get("rotation", 0),
+                            "opacity": transform.get("opacity", 1.0),
+                        })
+        except Exception as e:
+            print(f"Error collecting stickers: {e}")
+
         settings = {
             "resolution": self.res_combo.currentText(),
             "fps": int(self.fps_combo.currentText())
@@ -132,8 +152,8 @@ class ExportDialog(QDialog):
         self.progress_bar.show()
         self.progress_bar.setValue(0)
         
-        # Start Render
-        render_engine.render_timeline(timeline_clips, output_path, settings)
+        # Start Render (with stickers)
+        render_engine.render_timeline(timeline_clips, output_path, settings, stickers_data)
 
     def update_progress(self, value):
         self.progress_bar.setValue(value)

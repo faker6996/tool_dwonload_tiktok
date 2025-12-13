@@ -447,6 +447,7 @@ class Player(QFrame):
     transform_changed = pyqtSignal()  # Emitted when user interacts with overlay
     playhead_changed = pyqtSignal(float)  # Timeline time in seconds
     sticker_added = pyqtSignal(dict)  # Emitted when sticker is added to canvas
+    media_dropped = pyqtSignal(str)  # Emitted when media file is dropped (path)
 
     def __init__(self):
         super().__init__()
@@ -561,6 +562,8 @@ class Player(QFrame):
             if files:
                 file_path = files[0]
                 self.load_clip_from_path(file_path)
+                # Also emit signal so timeline can add clip
+                self.media_dropped.emit(file_path)
 
     def handle_sticker_drop(self, event):
         """Handle sticker drop from Effects panel."""
