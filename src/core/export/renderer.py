@@ -110,33 +110,72 @@ class RenderEngine(QObject):
         except:
             res_w, res_h = 1920, 1080
 
-        # Build video filter for stickers
-        vf_parts = []
+        # Create sticker images and build overlay filter
+        sticker_inputs = []  # Additional input files for stickers
+        overlay_filter = ""
+        temp_sticker_files = []
         
-        # Add sticker overlays using drawtext filter
-        for sticker in getattr(self, "stickers", []):
-            content = sticker.get("content", "")
-            if not content:
-                continue
-            
-            # Position relative to center - convert to absolute coords
-            x = sticker.get("x", 0)
-            y = sticker.get("y", 0)
-            scale = sticker.get("scale", 1.0)
-            
-            # Convert center-relative to absolute position
-            abs_x = int(res_w / 2 + x)
-            abs_y = int(res_h / 2 + y)
-            
-            # Calculate font size based on scale (base 72pt)
-            fontsize = int(72 * scale)
-            
-            # Escape special characters for FFmpeg
-            escaped_content = content.replace("'", "'\\''").replace(":", "\\:")
-            
-            # drawtext filter - use system emoji font
-            drawtext = f"drawtext=text='{escaped_content}':fontsize={fontsize}:x={abs_x}:y={abs_y}:fontcolor=white"
-            vf_parts.append(drawtext)
+        stickers_list = getattr(self, "stickers", [])
+        if stickers_list:
+            try:
+                from PIL import Image, ImageDraw, ImageFont
+                import platform
+                
+                for idx, sticker in enumerate(stickers_list):
+                    content = sticker.get("content", "")
+                    if not content:
+                        continue
+                    
+                    # Position relative to center - convert to absolute coords
+                    x = sticker.get("x", 0)
+                    y = sticker.get("y", 0)
+                    scale = sticker.get("scale", 1.0)
+                    
+                    # Create PNG image with emoji
+                    img_size = int(200 * scale)
+                    img = Image.new("RGBA", (img_size, img_size), (0, 0, 0, 0))
+                    draw = ImageDraw.Draw(img)
+                    
+                    # Try to load emoji font
+                    font_size = int(100 * scale)
+                    try:
+                        if platform.system() == "Darwin":  # macOS
+                            font = ImageFont.truetype("/System/Library/Fonts/Apple Color Emoji.ttc", font_size)
+                        else:
+                            font = ImageFont.truetype("/usr/share/fonts/truetype/noto/NotoColorEmoji.ttf", font_size)
+                    except:
+                        font = ImageFont.load_default()
+                    
+                    # Draw emoji centered
+                    draw.text((img_size//2, img_size//2), content, font=font, anchor="mm")
+                    
+                    # Save temporary PNG
+                    sticker_path = tempfile.mktemp(suffix=f"_sticker_{idx}.png", prefix="export_")
+                    img.save(sticker_path, "PNG")
+                    temp_sticker_files.append(sticker_path)
+                    
+                    # Calculate absolute position
+                    abs_x = int(res_w / 2 + x - img_size / 2)
+                    abs_y = int(res_h / 2 + y - img_size / 2)
+                    
+                    # Add input and overlay filter
+                    sticker_inputs.extend(["-i", sticker_path])
+                    
+                    if idx == 0:
+                        overlay_filter = f"[0:v][1:v]overlay={abs_x}:{abs_y}"
+                    else:
+                        overlay_filter += f"[tmp{idx-1}];[tmp{idx-1}][{idx+1}:v]overlay={abs_x}:{abs_y}"
+                    
+                    if idx < len(stickers_list) - 1:
+                        overlay_filter += f"[tmp{idx}]"
+                        
+            except ImportError as e:
+                print(f"Pillow not available for sticker export: {e}")
+            except Exception as e:
+                print(f"Error creating sticker images: {e}")
+        
+        # Store temp files for cleanup
+        self._temp_sticker_files = temp_sticker_files
 
         cmd = [
             "ffmpeg",
@@ -147,16 +186,21 @@ class RenderEngine(QObject):
             "0",
             "-i",
             concat_path,
+        ]
+        
+        # Add sticker image inputs
+        cmd.extend(sticker_inputs)
+        
+        cmd.extend([
             "-r",
             str(fps),
             "-s",
             resolution,
-        ]
+        ])
         
-        # Add video filter if we have stickers
-        if vf_parts:
-            vf_string = ",".join(vf_parts)
-            cmd.extend(["-vf", vf_string])
+        # Add overlay filter if we have stickers
+        if overlay_filter:
+            cmd.extend(["-filter_complex", overlay_filter])
         
         cmd.extend([
             "-c:v",
