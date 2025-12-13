@@ -91,7 +91,7 @@ class OverlayItem(QGraphicsObject):
 
 
 class StickerItem(QGraphicsObject):
-    """A sticker displayed on the player canvas."""
+    """A sticker displayed on the player canvas with corner-drag resize."""
     changed = pyqtSignal()
     selected_signal = pyqtSignal(object)  # Emits self when selected
 
@@ -107,23 +107,58 @@ class StickerItem(QGraphicsObject):
         self._rotation = 0.0
         self._opacity = 1.0
         
-        # Display size
-        self.base_size = 80
+        # Display size - larger default for better visibility
+        self.base_size = 150
+        
+        # Resize state
+        self._resizing = False
+        self._resize_start_pos = None
+        self._resize_start_scale = 1.0
+        self._active_handle = None  # Which corner is being dragged
+        self._handle_size = 12  # Larger handles for easier grabbing
         
         # Flags
         self.setFlag(QGraphicsItem.GraphicsItemFlag.ItemIsMovable)
         self.setFlag(QGraphicsItem.GraphicsItemFlag.ItemIsSelectable)
         self.setFlag(QGraphicsItem.GraphicsItemFlag.ItemSendsGeometryChanges)
+        self.setAcceptHoverEvents(True)
         
-        # Font for emoji
-        self._font = QFont("Segoe UI Emoji", 48)
+        # Font for emoji - larger for better visibility
+        self._font = QFont("Segoe UI Emoji", 72)
         
         # Selection border
-        self._pen = QPen(QColor("#6366f1"), 2, Qt.PenStyle.DashLine)
+        self._pen = QPen(QColor("#6366f1"), 3, Qt.PenStyle.DashLine)
+        
+        # Tooltip for user guidance
+        self.setToolTip("🖱️ Drag center to move\n↔️ Drag corners to resize\n🗑️ Press Delete to remove")
 
     def boundingRect(self):
         size = self.base_size * self._scale_factor
-        return QRectF(-size/2, -size/2, size, size)
+        # Include handle areas in bounding rect
+        margin = self._handle_size
+        return QRectF(-size/2 - margin, -size/2 - margin, size + margin*2, size + margin*2)
+
+    def _get_handle_rects(self):
+        """Return the 4 corner handle rectangles."""
+        size = self.base_size * self._scale_factor
+        r = size / 2
+        hs = self._handle_size
+        return {
+            "tl": QRectF(-r - hs/2, -r - hs/2, hs, hs),
+            "tr": QRectF(r - hs/2, -r - hs/2, hs, hs),
+            "bl": QRectF(-r - hs/2, r - hs/2, hs, hs),
+            "br": QRectF(r - hs/2, r - hs/2, hs, hs),
+        }
+
+    def _handle_at_pos(self, pos):
+        """Check if pos is over a handle, return handle name or None."""
+        if not self.isSelected():
+            return None
+        handles = self._get_handle_rects()
+        for name, rect in handles.items():
+            if rect.contains(pos):
+                return name
+        return None
 
     def paint(self, painter, option, widget):
         painter.setOpacity(self._opacity)
@@ -132,24 +167,94 @@ class StickerItem(QGraphicsObject):
         painter.setFont(self._font)
         painter.setPen(QColor("#ffffff"))
         
-        rect = self.boundingRect()
-        painter.drawText(rect, Qt.AlignmentFlag.AlignCenter, self.content)
+        size = self.base_size * self._scale_factor
+        emoji_rect = QRectF(-size/2, -size/2, size, size)
+        painter.drawText(emoji_rect, Qt.AlignmentFlag.AlignCenter, self.content)
         
-        # Draw selection border if selected
+        # Draw selection border and handles if selected
         if self.isSelected():
             painter.setPen(self._pen)
             painter.setBrush(Qt.BrushStyle.NoBrush)
-            painter.drawRect(rect)
+            painter.drawRect(emoji_rect)
             
-            # Draw corner handles
-            handle_size = 6
-            painter.setBrush(QBrush(QColor("#ffffff")))
-            painter.setPen(Qt.PenStyle.NoPen)
-            r = rect.width() / 2
-            painter.drawRect(QRectF(-r - handle_size/2, -r - handle_size/2, handle_size, handle_size))
-            painter.drawRect(QRectF(r - handle_size/2, -r - handle_size/2, handle_size, handle_size))
-            painter.drawRect(QRectF(-r - handle_size/2, r - handle_size/2, handle_size, handle_size))
-            painter.drawRect(QRectF(r - handle_size/2, r - handle_size/2, handle_size, handle_size))
+            # Draw corner handles - larger and more visible
+            handles = self._get_handle_rects()
+            for name, rect in handles.items():
+                # Highlight active handle
+                if name == self._active_handle:
+                    painter.setBrush(QBrush(QColor("#6366f1")))
+                else:
+                    painter.setBrush(QBrush(QColor("#ffffff")))
+                painter.setPen(QPen(QColor("#6366f1"), 2))
+                painter.drawRect(rect)
+
+    def hoverMoveEvent(self, event):
+        """Change cursor when hovering over handles."""
+        handle = self._handle_at_pos(event.pos())
+        if handle:
+            self.setCursor(Qt.CursorShape.SizeFDiagCursor if handle in ["tl", "br"] else Qt.CursorShape.SizeBDiagCursor)
+        else:
+            self.setCursor(Qt.CursorShape.OpenHandCursor)
+        super().hoverMoveEvent(event)
+
+    def hoverLeaveEvent(self, event):
+        self.unsetCursor()
+        super().hoverLeaveEvent(event)
+
+    def mousePressEvent(self, event):
+        if event.button() == Qt.MouseButton.LeftButton:
+            handle = self._handle_at_pos(event.pos())
+            if handle:
+                # Start resizing
+                self._resizing = True
+                self._active_handle = handle
+                self._resize_start_pos = event.pos()
+                self._resize_start_scale = self._scale_factor
+                event.accept()
+                self.update()
+                return
+        super().mousePressEvent(event)
+
+    def mouseMoveEvent(self, event):
+        if self._resizing and self._resize_start_pos:
+            # Calculate new scale based on drag distance
+            delta = event.pos() - self._resize_start_pos
+            
+            # Use diagonal distance for uniform scaling
+            drag_distance = (delta.x() + delta.y()) / 2
+            
+            # Invert for top-left handle
+            if self._active_handle in ["tl"]:
+                drag_distance = -drag_distance
+            elif self._active_handle == "tr":
+                drag_distance = (delta.x() - delta.y()) / 2
+            elif self._active_handle == "bl":
+                drag_distance = (-delta.x() + delta.y()) / 2
+            
+            # Scale factor change based on drag
+            scale_change = drag_distance / 100  # Sensitivity
+            new_scale = self._resize_start_scale + scale_change
+            new_scale = max(0.3, min(5.0, new_scale))
+            
+            if new_scale != self._scale_factor:
+                self.prepareGeometryChange()
+                self._scale_factor = new_scale
+                self.update()
+            event.accept()
+            return
+        super().mouseMoveEvent(event)
+
+    def mouseReleaseEvent(self, event):
+        if self._resizing:
+            self._resizing = False
+            self._active_handle = None
+            self._resize_start_pos = None
+            self.changed.emit()
+            self.update()
+            event.accept()
+            return
+        super().mouseReleaseEvent(event)
+        self.changed.emit()
 
     def itemChange(self, change, value):
         if change == QGraphicsItem.GraphicsItemChange.ItemSelectedChange:
@@ -157,21 +262,20 @@ class StickerItem(QGraphicsObject):
                 self.selected_signal.emit(self)
         return super().itemChange(change, value)
 
-    def mouseReleaseEvent(self, event):
-        super().mouseReleaseEvent(event)
-        self.changed.emit()
-
-    def wheelEvent(self, event):
-        # Scale with mouse wheel
-        delta = event.angleDelta().y()
-        if delta > 0:
-            self._scale_factor = min(5.0, self._scale_factor + 0.1)
-        else:
-            self._scale_factor = max(0.2, self._scale_factor - 0.1)
-        self.prepareGeometryChange()
-        self.update()
-        self.changed.emit()
-        event.accept()
+    def keyPressEvent(self, event):
+        # Delete sticker with Delete or Backspace key
+        if event.key() in (Qt.Key.Key_Delete, Qt.Key.Key_Backspace):
+            # Find player and remove this sticker
+            scene = self.scene()
+            if scene:
+                for view in scene.views():
+                    player = view.parent()
+                    while player:
+                        if hasattr(player, 'remove_sticker'):
+                            player.remove_sticker(self)
+                            return
+                        player = player.parent()
+        super().keyPressEvent(event)
 
     def set_scale(self, scale: float):
         self._scale_factor = max(0.1, min(5.0, scale))
