@@ -15,11 +15,13 @@ from PyQt6.QtWidgets import (
     QGraphicsColorizeEffect,
 )
 from PyQt6.QtCore import Qt, QRectF, pyqtSignal, QUrl, QSizeF
-from PyQt6.QtGui import QBrush, QColor, QPen, QTransform, QPainter
+from PyQt6.QtGui import QBrush, QColor, QPen, QTransform, QPainter, QFont
 from PyQt6.QtMultimedia import QMediaPlayer, QAudioOutput
 from PyQt6.QtMultimediaWidgets import QGraphicsVideoItem
 from src.core.timeline.clip import Clip
+from src.core.timeline.sticker import StickerClip
 from contextlib import contextmanager
+import json
 
 
 @contextmanager
@@ -87,25 +89,135 @@ class OverlayItem(QGraphicsObject):
         super().mouseReleaseEvent(event)
         self.changed.emit()
 
+
+class StickerItem(QGraphicsObject):
+    """A sticker displayed on the player canvas."""
+    changed = pyqtSignal()
+    selected_signal = pyqtSignal(object)  # Emits self when selected
+
+    def __init__(self, sticker_data: dict, parent=None):
+        super().__init__(parent)
+        self.sticker_data = sticker_data
+        self.sticker_id = sticker_data.get("id", str(id(self)))
+        self.content = sticker_data.get("content", "😀")
+        self.sticker_type = sticker_data.get("type", "emoji")
+        
+        # Transform properties
+        self._scale_factor = 1.0
+        self._rotation = 0.0
+        self._opacity = 1.0
+        
+        # Display size
+        self.base_size = 80
+        
+        # Flags
+        self.setFlag(QGraphicsItem.GraphicsItemFlag.ItemIsMovable)
+        self.setFlag(QGraphicsItem.GraphicsItemFlag.ItemIsSelectable)
+        self.setFlag(QGraphicsItem.GraphicsItemFlag.ItemSendsGeometryChanges)
+        
+        # Font for emoji
+        self._font = QFont("Segoe UI Emoji", 48)
+        
+        # Selection border
+        self._pen = QPen(QColor("#6366f1"), 2, Qt.PenStyle.DashLine)
+
+    def boundingRect(self):
+        size = self.base_size * self._scale_factor
+        return QRectF(-size/2, -size/2, size, size)
+
+    def paint(self, painter, option, widget):
+        painter.setOpacity(self._opacity)
+        
+        # Draw emoji/text
+        painter.setFont(self._font)
+        painter.setPen(QColor("#ffffff"))
+        
+        rect = self.boundingRect()
+        painter.drawText(rect, Qt.AlignmentFlag.AlignCenter, self.content)
+        
+        # Draw selection border if selected
+        if self.isSelected():
+            painter.setPen(self._pen)
+            painter.setBrush(Qt.BrushStyle.NoBrush)
+            painter.drawRect(rect)
+            
+            # Draw corner handles
+            handle_size = 6
+            painter.setBrush(QBrush(QColor("#ffffff")))
+            painter.setPen(Qt.PenStyle.NoPen)
+            r = rect.width() / 2
+            painter.drawRect(QRectF(-r - handle_size/2, -r - handle_size/2, handle_size, handle_size))
+            painter.drawRect(QRectF(r - handle_size/2, -r - handle_size/2, handle_size, handle_size))
+            painter.drawRect(QRectF(-r - handle_size/2, r - handle_size/2, handle_size, handle_size))
+            painter.drawRect(QRectF(r - handle_size/2, r - handle_size/2, handle_size, handle_size))
+
+    def itemChange(self, change, value):
+        if change == QGraphicsItem.GraphicsItemChange.ItemSelectedChange:
+            if value:
+                self.selected_signal.emit(self)
+        return super().itemChange(change, value)
+
+    def mouseReleaseEvent(self, event):
+        super().mouseReleaseEvent(event)
+        self.changed.emit()
+
+    def wheelEvent(self, event):
+        # Scale with mouse wheel
+        delta = event.angleDelta().y()
+        if delta > 0:
+            self._scale_factor = min(5.0, self._scale_factor + 0.1)
+        else:
+            self._scale_factor = max(0.2, self._scale_factor - 0.1)
+        self.prepareGeometryChange()
+        self.update()
+        self.changed.emit()
+        event.accept()
+
+    def set_scale(self, scale: float):
+        self._scale_factor = max(0.1, min(5.0, scale))
+        self.prepareGeometryChange()
+        self.update()
+
+    def get_transform_data(self) -> dict:
+        """Return current transform data for saving."""
+        pos = self.pos()
+        return {
+            "position_x": pos.x(),
+            "position_y": pos.y(),
+            "scale": self._scale_factor,
+            "rotation": self._rotation,
+            "opacity": self._opacity,
+        }
+
 class DroppableGraphicsView(QGraphicsView):
     def __init__(self, scene, parent=None):
         super().__init__(scene, parent)
         self.setAcceptDrops(True)
 
     def dragEnterEvent(self, event):
-        if event.mimeData().hasUrls():
+        # Accept both file URLs and sticker data
+        if event.mimeData().hasUrls() or event.mimeData().hasFormat("application/x-sticker"):
             event.accept()
         else:
             event.ignore()
 
     def dragMoveEvent(self, event):
-        if event.mimeData().hasUrls():
+        if event.mimeData().hasUrls() or event.mimeData().hasFormat("application/x-sticker"):
             event.accept()
         else:
             event.ignore()
 
     def dropEvent(self, event):
-        if event.mimeData().hasUrls():
+        # Handle sticker drop
+        if event.mimeData().hasFormat("application/x-sticker"):
+            parent = self.parent()
+            while parent:
+                if hasattr(parent, "handle_sticker_drop"):
+                    parent.handle_sticker_drop(event)
+                    return
+                parent = parent.parent()
+            event.accept()
+        elif event.mimeData().hasUrls():
             if self.parent():
                 parent = self.parent()
                 while parent:
@@ -133,6 +245,7 @@ class DroppableGraphicsView(QGraphicsView):
 class Player(QFrame):
     transform_changed = pyqtSignal()  # Emitted when user interacts with overlay
     playhead_changed = pyqtSignal(float)  # Timeline time in seconds
+    sticker_added = pyqtSignal(dict)  # Emitted when sticker is added to canvas
 
     def __init__(self):
         super().__init__()
@@ -143,6 +256,9 @@ class Player(QFrame):
         self.timeline_offset = 0.0
         self.scene = QGraphicsScene()
         self.aspect_ratio_preset = "Original"
+        
+        # Stickers on canvas
+        self.stickers = []  # List of StickerItem
         
         # Styling
         self.setStyleSheet("""
@@ -244,6 +360,61 @@ class Player(QFrame):
             if files:
                 file_path = files[0]
                 self.load_clip_from_path(file_path)
+
+    def handle_sticker_drop(self, event):
+        """Handle sticker drop from Effects panel."""
+        if event.mimeData().hasFormat("application/x-sticker"):
+            data = event.mimeData().data("application/x-sticker")
+            sticker_data = json.loads(bytes(data).decode('utf-8'))
+            
+            # Get drop position in scene coordinates
+            view_pos = event.position().toPoint()
+            scene_pos = self.view.mapToScene(view_pos)
+            
+            self.add_sticker(sticker_data, scene_pos.x(), scene_pos.y())
+            event.accept()
+
+    def add_sticker(self, sticker_data: dict, x: float = None, y: float = None):
+        """Add a sticker to the canvas."""
+        sticker_item = StickerItem(sticker_data)
+        
+        # Position at center if not specified
+        if x is None:
+            x = self.canvas_width / 2
+        if y is None:
+            y = self.canvas_height / 2
+        
+        sticker_item.setPos(x, y)
+        sticker_item.changed.connect(self.on_sticker_changed)
+        sticker_item.selected_signal.connect(self.on_sticker_selected)
+        
+        self.scene.addItem(sticker_item)
+        self.stickers.append(sticker_item)
+        
+        # Emit signal for timeline integration
+        self.sticker_added.emit({
+            **sticker_data,
+            "position_x": x - self.canvas_width / 2,
+            "position_y": y - self.canvas_height / 2,
+        })
+        
+        return sticker_item
+
+    def remove_sticker(self, sticker_item):
+        """Remove a sticker from the canvas."""
+        if sticker_item in self.stickers:
+            self.scene.removeItem(sticker_item)
+            self.stickers.remove(sticker_item)
+
+    def on_sticker_changed(self):
+        """Handle sticker transform changes."""
+        self.transform_changed.emit()
+
+    def on_sticker_selected(self, sticker_item):
+        """Handle sticker selection."""
+        # Deselect video overlay when sticker is selected
+        if hasattr(self, 'overlay_item'):
+            self.overlay_item.setSelected(False)
 
     def load_clip_from_path(self, file_path):
         # Create a temporary clip for preview

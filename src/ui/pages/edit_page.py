@@ -83,6 +83,9 @@ class EditPage(QWidget):
 
             # Apply visual effects presets to the currently selected clip
             self.effects.effect_selected.connect(self.on_effect_selected)
+            
+            # Connect sticker signals
+            self.effects.sticker_added.connect(self.on_sticker_added)
 
             # Sync player playback position to timeline playhead
             self.player.playhead_changed.connect(timeline_widget.set_playhead_time)
@@ -126,6 +129,10 @@ class EditPage(QWidget):
 
         # Refresh player view with updated clip (if needed later)
         self.player.update_overlay(clip)
+
+    def on_sticker_added(self, sticker_data: dict):
+        """Handle sticker click from Effects panel - add to player canvas."""
+        self.player.add_sticker(sticker_data)
 
     def open_export_dialog(self):
         from ..dialogs.export_dialog import ExportDialog

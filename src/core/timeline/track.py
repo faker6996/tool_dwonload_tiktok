@@ -118,3 +118,48 @@ class MagneticTrack(Track):
                 self.clips[i].start_time -= shift_amount
                 
         return removed_clip
+
+
+class StickerTrack(Track):
+    """
+    Track for sticker overlays.
+    Stickers can overlap and are not magnetic.
+    """
+    def __init__(self, name: str = "Stickers"):
+        super().__init__(name, is_audio=False)
+        self.stickers = []  # List of StickerClip objects
+    
+    def add_sticker(self, sticker, position: Optional[float] = None) -> bool:
+        """
+        Add a sticker to the track.
+        """
+        if self.is_locked:
+            return False
+        
+        if position is not None:
+            sticker.start_time = position
+        
+        self.stickers.append(sticker)
+        self.stickers.sort(key=lambda s: s.start_time)
+        return True
+    
+    def remove_sticker(self, sticker_id: str):
+        """
+        Remove a sticker by ID.
+        """
+        if self.is_locked:
+            return None
+        
+        for i, sticker in enumerate(self.stickers):
+            if sticker.id == sticker_id:
+                return self.stickers.pop(i)
+        return None
+    
+    def get_stickers_at_time(self, time: float) -> list:
+        """
+        Get all stickers visible at a specific time.
+        """
+        return [
+            s for s in self.stickers
+            if s.start_time <= time < s.start_time + s.duration
+        ]
