@@ -9,6 +9,7 @@ from PyQt6.QtWidgets import (
     QFileDialog,
     QProgressBar,
     QMessageBox,
+    QWidget,
 )
 from PyQt6.QtCore import Qt
 from src.core.export.renderer import render_engine
@@ -179,26 +180,49 @@ class ExportDialog(QDialog):
             "fps": int(self.fps_combo.currentText())
         }
         
-        # UI State
+        # UI State - show loading
         self.export_btn.setEnabled(False)
-        self.cancel_btn.setEnabled(False)
-        self.progress_bar.show()
+        self.cancel_btn.setText("Cancel Export")
+        self.progress_container.show()
         self.progress_bar.setValue(0)
+        self.status_label.setText("🎬 Encoding video... Please wait, this may take several minutes.")
+        self.status_label.setStyleSheet("color: #fbbf24; font-size: 13px; font-weight: bold;")
+        self.time_label.setText("⏳ Video encoding in progress. Do not close this window.")
+        
+        # Store start time for duration estimate
+        import time
+        self._export_start_time = time.time()
         
         # Start Render (with stickers)
         render_engine.render_timeline(timeline_clips, output_path, settings, stickers_data)
 
     def update_progress(self, value):
         self.progress_bar.setValue(value)
+        
+        # Update time estimate
+        import time
+        if hasattr(self, '_export_start_time') and value > 0:
+            elapsed = time.time() - self._export_start_time
+            if value < 100:
+                estimated_total = elapsed / (value / 100)
+                remaining = estimated_total - elapsed
+                mins = int(remaining // 60)
+                secs = int(remaining % 60)
+                self.time_label.setText(f"⏳ Estimated time remaining: {mins}m {secs}s")
 
     def on_render_finished(self, success, message):
         self.export_btn.setEnabled(True)
-        self.cancel_btn.setEnabled(True)
+        self.cancel_btn.setText("Close")
         if success:
-            self.progress_bar.setFormat("Done!")
-            QMessageBox.information(self, "Export Video", message or "Export finished.")
-            # Optionally close dialog on success
-            # self.accept()
+            self.status_label.setText("✅ Export completed successfully!")
+            self.status_label.setStyleSheet("color: #22c55e; font-size: 13px; font-weight: bold;")
+            self.progress_bar.setFormat("100% - Done!")
+            self.time_label.setText("")
+            QMessageBox.information(self, "Export Video", message or "Export finished successfully!")
         else:
+            self.status_label.setText("❌ Export failed")
+            self.status_label.setStyleSheet("color: #ef4444; font-size: 13px; font-weight: bold;")
             self.progress_bar.setFormat("Error")
+            self.time_label.setText(message or "Unknown error")
             QMessageBox.critical(self, "Export Video", message or "Export failed.")
+
