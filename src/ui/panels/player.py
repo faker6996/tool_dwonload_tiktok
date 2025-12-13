@@ -91,7 +91,7 @@ class OverlayItem(QGraphicsObject):
 
 
 class StickerItem(QGraphicsObject):
-    """A sticker displayed on the player canvas with corner-drag resize."""
+    """A sticker displayed on the player canvas with corner-drag resize and rotation."""
     changed = pyqtSignal()
     selected_signal = pyqtSignal(object)  # Emits self when selected
 
@@ -117,6 +117,12 @@ class StickerItem(QGraphicsObject):
         self._active_handle = None  # Which corner is being dragged
         self._handle_size = 12  # Larger handles for easier grabbing
         
+        # Rotation state
+        self._rotating = False
+        self._rotate_start_pos = None
+        self._rotate_start_angle = 0.0
+        self._rotation_handle_distance = 30  # Distance of rotation handle from top edge
+        
         # Flags
         self.setFlag(QGraphicsItem.GraphicsItemFlag.ItemIsMovable)
         self.setFlag(QGraphicsItem.GraphicsItemFlag.ItemIsSelectable)
@@ -130,12 +136,12 @@ class StickerItem(QGraphicsObject):
         self._pen = QPen(QColor("#6366f1"), 3, Qt.PenStyle.DashLine)
         
         # Tooltip for user guidance
-        self.setToolTip("🖱️ Drag center to move\n↔️ Drag corners to resize\n🗑️ Press Delete to remove")
+        self.setToolTip("🖱️ Drag center to move\n↔️ Drag corners to resize\n� Drag top circle to rotate\n�🗑️ Press Delete to remove")
 
     def boundingRect(self):
         size = self.base_size * self._scale_factor
-        # Include handle areas in bounding rect
-        margin = self._handle_size
+        # Include handle areas and rotation handle in bounding rect
+        margin = self._handle_size + self._rotation_handle_distance + 10
         return QRectF(-size/2 - margin, -size/2 - margin, size + margin*2, size + margin*2)
 
     def _get_handle_rects(self):
@@ -150,10 +156,25 @@ class StickerItem(QGraphicsObject):
             "br": QRectF(r - hs/2, r - hs/2, hs, hs),
         }
 
+    def _get_rotation_handle_rect(self):
+        """Return the rotation handle circle rect (above the sticker)."""
+        size = self.base_size * self._scale_factor
+        r = size / 2
+        hs = self._handle_size
+        # Position above the top edge
+        return QRectF(-hs/2, -r - self._rotation_handle_distance - hs/2, hs, hs)
+
     def _handle_at_pos(self, pos):
         """Check if pos is over a handle, return handle name or None."""
         if not self.isSelected():
             return None
+        
+        # Check rotation handle first
+        rot_rect = self._get_rotation_handle_rect()
+        if rot_rect.contains(pos):
+            return "rotate"
+        
+        # Check corner handles
         handles = self._get_handle_rects()
         for name, rect in handles.items():
             if rect.contains(pos):
@@ -163,16 +184,27 @@ class StickerItem(QGraphicsObject):
     def paint(self, painter, option, widget):
         painter.setOpacity(self._opacity)
         
-        # Draw emoji/text
-        painter.setFont(self._font)
+        # Apply rotation transform
+        painter.save()
+        painter.rotate(self._rotation)
+        
+        # Draw emoji/text - scale font with sticker size
+        scaled_font = QFont(self._font)
+        scaled_font.setPointSizeF(self._font.pointSizeF() * self._scale_factor)
+        painter.setFont(scaled_font)
         painter.setPen(QColor("#ffffff"))
         
         size = self.base_size * self._scale_factor
         emoji_rect = QRectF(-size/2, -size/2, size, size)
         painter.drawText(emoji_rect, Qt.AlignmentFlag.AlignCenter, self.content)
         
-        # Draw selection border and handles if selected
+        painter.restore()
+        
+        # Draw selection border and handles if selected (not rotated, in item coords)
         if self.isSelected():
+            painter.save()
+            painter.rotate(self._rotation)
+            
             painter.setPen(self._pen)
             painter.setBrush(Qt.BrushStyle.NoBrush)
             painter.drawRect(emoji_rect)
@@ -187,15 +219,46 @@ class StickerItem(QGraphicsObject):
                     painter.setBrush(QBrush(QColor("#ffffff")))
                 painter.setPen(QPen(QColor("#6366f1"), 2))
                 painter.drawRect(rect)
+            
+            # Draw rotation handle (circle above sticker)
+            rot_rect = self._get_rotation_handle_rect()
+            
+            # Draw line connecting rotation handle to sticker
+            painter.setPen(QPen(QColor("#6366f1"), 2))
+            painter.drawLine(0, int(-size/2), 0, int(-size/2 - self._rotation_handle_distance))
+            
+            # Draw rotation circle
+            if self._active_handle == "rotate":
+                painter.setBrush(QBrush(QColor("#6366f1")))
+            else:
+                painter.setBrush(QBrush(QColor("#22c55e")))  # Green for rotation
+            painter.setPen(QPen(QColor("#ffffff"), 2))
+            painter.drawEllipse(rot_rect)
+            
+            painter.restore()
 
     def hoverMoveEvent(self, event):
         """Change cursor when hovering over handles."""
-        handle = self._handle_at_pos(event.pos())
-        if handle:
+        # Need to account for rotation when checking handle positions
+        handle = self._handle_at_pos(self._rotate_point(event.pos(), -self._rotation))
+        if handle == "rotate":
+            self.setCursor(Qt.CursorShape.CrossCursor)
+        elif handle:
             self.setCursor(Qt.CursorShape.SizeFDiagCursor if handle in ["tl", "br"] else Qt.CursorShape.SizeBDiagCursor)
         else:
             self.setCursor(Qt.CursorShape.OpenHandCursor)
         super().hoverMoveEvent(event)
+
+    def _rotate_point(self, point, angle):
+        """Rotate a point around origin by angle degrees."""
+        import math
+        rad = math.radians(angle)
+        cos_a = math.cos(rad)
+        sin_a = math.sin(rad)
+        x = point.x() * cos_a - point.y() * sin_a
+        y = point.x() * sin_a + point.y() * cos_a
+        from PyQt6.QtCore import QPointF
+        return QPointF(x, y)
 
     def hoverLeaveEvent(self, event):
         self.unsetCursor()
@@ -203,12 +266,24 @@ class StickerItem(QGraphicsObject):
 
     def mousePressEvent(self, event):
         if event.button() == Qt.MouseButton.LeftButton:
-            handle = self._handle_at_pos(event.pos())
-            if handle:
+            # Transform mouse position to account for current rotation
+            rotated_pos = self._rotate_point(event.pos(), -self._rotation)
+            handle = self._handle_at_pos(rotated_pos)
+            
+            if handle == "rotate":
+                # Start rotating
+                self._rotating = True
+                self._active_handle = "rotate"
+                self._rotate_start_pos = event.pos()
+                self._rotate_start_angle = self._rotation
+                event.accept()
+                self.update()
+                return
+            elif handle:
                 # Start resizing
                 self._resizing = True
                 self._active_handle = handle
-                self._resize_start_pos = event.pos()
+                self._resize_start_pos = rotated_pos
                 self._resize_start_scale = self._scale_factor
                 event.accept()
                 self.update()
@@ -216,9 +291,23 @@ class StickerItem(QGraphicsObject):
         super().mousePressEvent(event)
 
     def mouseMoveEvent(self, event):
+        import math
+        
+        if self._rotating and self._rotate_start_pos is not None:
+            # Calculate rotation angle based on mouse position relative to center
+            pos = event.pos()
+            angle = math.degrees(math.atan2(pos.x(), -pos.y()))
+            
+            self._rotation = angle
+            self.prepareGeometryChange()
+            self.update()
+            event.accept()
+            return
+            
         if self._resizing and self._resize_start_pos:
-            # Calculate new scale based on drag distance
-            delta = event.pos() - self._resize_start_pos
+            # Transform mouse position to account for rotation
+            rotated_pos = self._rotate_point(event.pos(), -self._rotation)
+            delta = rotated_pos - self._resize_start_pos
             
             # Use diagonal distance for uniform scaling
             drag_distance = (delta.x() + delta.y()) / 2
@@ -245,6 +334,14 @@ class StickerItem(QGraphicsObject):
         super().mouseMoveEvent(event)
 
     def mouseReleaseEvent(self, event):
+        if self._rotating:
+            self._rotating = False
+            self._active_handle = None
+            self._rotate_start_pos = None
+            self.changed.emit()
+            self.update()
+            event.accept()
+            return
         if self._resizing:
             self._resizing = False
             self._active_handle = None
