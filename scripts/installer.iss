@@ -26,7 +26,7 @@ Compression=lzma2/ultra64
 SolidCompression=yes
 ; UI
 WizardStyle=modern
-SetupIconFile=..\assets\app_icon.ico
+; SetupIconFile=..\assets\app_icon.ico  ; Commented out - no .ico file available
 UninstallDisplayIcon={app}\{#MyAppExeName}
 ; Privileges
 PrivilegesRequired=lowest
