@@ -714,13 +714,13 @@ class Player(QFrame):
             QLabel {
                 background-color: transparent;
                 color: white;
-                font-size: 22px;
+                font-size: 16px;
                 font-weight: bold;
                 font-family: Arial, sans-serif;
-                padding: 12px 24px;
+                padding: 6px 12px;
                 /* Text shadow to simulate outline like in exported video */
-                text-shadow: 2px 2px 4px black, -2px -2px 4px black, 
-                             2px -2px 4px black, -2px 2px 4px black;
+                text-shadow: 1px 1px 2px black, -1px -1px 2px black, 
+                             1px -1px 2px black, -1px 1px 2px black;
             }
         """)
         self.subtitle_label.setMinimumWidth(200)
@@ -1215,9 +1215,9 @@ class Player(QFrame):
         label_width = min(self.subtitle_label.width(), container_width - 40)
         label_height = self.subtitle_label.height()
         
-        # Position at bottom center
+        # Position at bottom center (closer to bottom)
         x = (container_width - label_width) // 2
-        y = container_height - label_height - 60  # 60px from bottom
+        y = container_height - label_height - 25  # 25px from bottom (closer)
         
         self.subtitle_label.setGeometry(x, y, label_width, label_height)
 
