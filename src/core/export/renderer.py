@@ -1,8 +1,38 @@
 import subprocess
 import os
+import sys
 import tempfile
 from typing import List, Dict, Optional, Tuple
 from PyQt6.QtCore import QObject, pyqtSignal
+
+
+def get_ffmpeg_path() -> str:
+    """Get path to FFmpeg binary - bundled or system."""
+    # Check for bundled FFmpeg first
+    if getattr(sys, 'frozen', False):
+        # Running as PyInstaller bundle
+        base_path = sys._MEIPASS
+    else:
+        # Running as script
+        base_path = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+    
+    # Check bundled locations
+    bundled_paths = [
+        os.path.join(base_path, 'bin', 'ffmpeg'),
+        os.path.join(base_path, 'bin', 'ffmpeg.exe'),
+        os.path.join(base_path, 'ffmpeg'),
+        os.path.join(base_path, 'ffmpeg.exe'),
+    ]
+    
+    for path in bundled_paths:
+        if os.path.exists(path):
+            print(f"Using bundled FFmpeg: {path}")
+            return path
+    
+    # Fall back to system FFmpeg
+    print("Using system FFmpeg")
+    return "ffmpeg"
+
 
 class RenderEngine(QObject):
     progress_updated = pyqtSignal(int) # 0-100
@@ -11,12 +41,14 @@ class RenderEngine(QObject):
     def __init__(self):
         super().__init__()
         self.output_path = ""
+        self.ffmpeg_path = get_ffmpeg_path()
         self.settings = {
             "resolution": "1920x1080",
             "fps": 30,
             "format": "mp4",
             "quality": "High" # High, Medium, Low
         }
+
 
     def render_timeline(self, timeline_clips: List[Dict], output_path: str, settings: Dict, stickers: List[Dict] = None, subtitles: List[Dict] = None):
         """
@@ -182,7 +214,7 @@ class RenderEngine(QObject):
         self._temp_sticker_files = temp_sticker_files
 
         cmd = [
-            "ffmpeg",
+            self.ffmpeg_path,
             "-y",
             "-f",
             "concat",
