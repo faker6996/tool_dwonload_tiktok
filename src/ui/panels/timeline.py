@@ -1,6 +1,7 @@
-from PyQt6.QtWidgets import QFrame, QVBoxLayout, QLabel, QHBoxLayout, QPushButton, QSlider, QWidget, QInputDialog
+from PyQt6.QtWidgets import QFrame, QVBoxLayout, QLabel, QHBoxLayout, QPushButton, QSlider, QWidget, QInputDialog, QMessageBox
 from PyQt6.QtCore import Qt
 from src.ui.timeline.timeline_widget import TimelineWidget
+
 
 class Timeline(QFrame):
     def __init__(self):
@@ -27,7 +28,7 @@ class Timeline(QFrame):
         self.caption_btn = QPushButton("🎯 Auto Caption")
         self.caption_btn.setObjectName("primary")
         self.caption_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.caption_btn.clicked.connect(self.generate_captions)
+        self.caption_btn.clicked.connect(self.open_caption_dialog)
         header_layout.addWidget(self.caption_btn)
         
         # TTS Button
@@ -54,79 +55,101 @@ class Timeline(QFrame):
         self.timeline_widget = TimelineWidget()
         layout.addWidget(self.timeline_widget)
 
-    def generate_captions(self):
-        # Get selected clip
-        # For MVP, we just take the first clip in main track if nothing selected
-        # Or better, we need access to selection.
-        # Let's assume we caption the first clip in main track for now.
+    def open_caption_dialog(self):
+        """Open dialog to configure and run auto caption."""
+        from src.ui.dialogs.ai_dialogs import CaptionDialog
         
+        # Check if there's a clip to caption
         track = self.timeline_widget.main_track
         if not track.clips:
-            print("No clips to caption")
+            QMessageBox.warning(self, "Auto Caption", "Không có video trong timeline.\nVui lòng thêm video trước.")
+            return
+        
+        dialog = CaptionDialog(self)
+        if dialog.exec():
+            language = dialog.get_language()
+            self.generate_captions(language)
+    
+    def generate_captions(self, language=None):
+        """Run transcription with selected language."""
+        track = self.timeline_widget.main_track
+        if not track.clips:
             return
             
         clip = track.clips[0]
         
-        # Call Transcription Service
+        # Call Transcription Service with language
         from src.core.ai.transcription import transcription_service
-        segments = transcription_service.transcribe(clip.asset_id)
         
-        # Create Subtitle Track if needed
-        # For MVP, we'll just add to a new track or the main track (if we support layers)
-        # Let's add to a new "Subtitle" track in TimelineWidget
+        print(f"Starting transcription with language: {language or 'auto-detect'}")
+        segments = transcription_service.transcribe(clip.asset_id, language=language)
         
-        self.timeline_widget.add_subtitle_track(segments, start_offset=clip.start_time)
+        if segments:
+            self.timeline_widget.add_subtitle_track(segments, start_offset=clip.start_time)
+            print(f"Added {len(segments)} subtitle clips")
+        else:
+            QMessageBox.warning(self, "Auto Caption", "Không thể tạo caption. Kiểm tra file video.")
 
     def open_tts_dialog(self):
-        text, ok = QInputDialog.getText(self, "Text to Speech", "Enter text to generate speech (Vietnamese/English):")
-        if ok and text:
-            from src.core.ai.tts import tts_service
-            import os
-            import tempfile
-            import time
-            from src.core.timeline.clip import Clip
-            from src.core.timeline.track import Track
+        """Open TTS dialog with voice selection."""
+        from src.ui.dialogs.ai_dialogs import TTSDialog
+        
+        dialog = TTSDialog(self)
+        if dialog.exec():
+            text = dialog.get_text()
+            voice = dialog.get_voice()
             
-            # Generate Audio (edge-tts generates MP3)
-            temp_dir = tempfile.gettempdir()
-            output_path = os.path.join(temp_dir, f"tts_{int(time.time())}.mp3")
+            if text:
+                self.generate_tts(text, voice)
+    
+    def generate_tts(self, text: str, voice: str):
+        """Generate TTS audio with selected voice."""
+        from src.core.ai.tts import tts_service
+        import os
+        import tempfile
+        import time
+        from src.core.timeline.clip import Clip
+        from src.core.timeline.track import Track
+        
+        # Generate Audio
+        temp_dir = tempfile.gettempdir()
+        output_path = os.path.join(temp_dir, f"tts_{int(time.time())}.mp3")
+        
+        try:
+            tts_service.generate_speech(text, output_path, voice=voice)
             
+            # Get audio duration
             try:
-                tts_service.generate_speech(text, output_path)
-                
-                # Get actual audio duration using mutagen if available, otherwise estimate
-                try:
-                    from mutagen.mp3 import MP3
-                    audio = MP3(output_path)
-                    duration = audio.info.length
-                except:
-                    # Fallback: estimate based on text length
-                    words = len(text.split())
-                    duration = max(1.0, words * 0.4)
-                
-                # Find or create AI Voiceover track
-                audio_track = None
-                for track in self.timeline_widget.tracks:
-                    if track.name == "AI Voiceover":
-                        audio_track = track
-                        break
-                
-                if not audio_track:
-                    audio_track = Track("AI Voiceover", is_audio=True)
-                    self.timeline_widget.tracks.append(audio_track)
-                
-                # Create Clip
-                clip = Clip(
-                    asset_id=output_path,
-                    name=f"🎤 {text[:20]}..." if len(text) > 20 else f"🎤 {text}",
-                    duration=duration,
-                    waveform_path=None
-                )
-                audio_track.clips.append(clip)
-                
-                self.timeline_widget.refresh_tracks()
-                print(f"TTS audio added: {duration:.1f}s")
-                
-            except Exception as e:
-                print(f"TTS Error: {e}")
-
+                from mutagen.mp3 import MP3
+                audio = MP3(output_path)
+                duration = audio.info.length
+            except:
+                words = len(text.split())
+                duration = max(1.0, words * 0.4)
+            
+            # Find or create AI Voiceover track
+            audio_track = None
+            for track in self.timeline_widget.tracks:
+                if track.name == "AI Voiceover":
+                    audio_track = track
+                    break
+            
+            if not audio_track:
+                audio_track = Track("AI Voiceover", is_audio=True)
+                self.timeline_widget.tracks.append(audio_track)
+            
+            # Create Clip
+            clip = Clip(
+                asset_id=output_path,
+                name=f"🎤 {text[:20]}..." if len(text) > 20 else f"🎤 {text}",
+                duration=duration,
+                waveform_path=None
+            )
+            audio_track.clips.append(clip)
+            
+            self.timeline_widget.refresh_tracks()
+            print(f"TTS audio added: {duration:.1f}s with voice: {voice}")
+            
+        except Exception as e:
+            print(f"TTS Error: {e}")
+            QMessageBox.critical(self, "TTS Error", f"Không thể tạo audio:\n{str(e)}")
