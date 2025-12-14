@@ -12,6 +12,7 @@ ffmpeg-python
 openai-whisper
 edge-tts
 deep-translator
+mlx-whisper  # Optional: Fast transcription on Apple Silicon (M1/M2/M3)
 
 # TikTok/Douyin Download
 pyktok

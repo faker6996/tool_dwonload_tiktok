@@ -18,19 +18,23 @@ class RenderEngine(QObject):
             "quality": "High" # High, Medium, Low
         }
 
-    def render_timeline(self, timeline_clips: List[Dict], output_path: str, settings: Dict, stickers: List[Dict] = None):
+    def render_timeline(self, timeline_clips: List[Dict], output_path: str, settings: Dict, stickers: List[Dict] = None, subtitles: List[Dict] = None):
         """
         Render the timeline to a video file.
         timeline_clips: List of clip data (path, start, duration, etc.)
         stickers: List of sticker data to overlay (content, x, y, scale, rotation)
+        subtitles: List of subtitle clips (start_time, duration, text_content)
         """
         self.output_path = output_path
         self.settings.update(settings)
         self.stickers = stickers or []
+        self.subtitles = subtitles or []
         
         print(f"Starting render to {output_path} with settings {self.settings}")
         if self.stickers:
             print(f"Rendering {len(self.stickers)} stickers")
+        if self.subtitles:
+            print(f"Burning {len(self.subtitles)} subtitles into video")
 
         if not timeline_clips:
             self.render_finished.emit(False, "No clips to render.")
@@ -198,25 +202,117 @@ class RenderEngine(QObject):
             resolution,
         ])
         
-        # Add overlay filter if we have stickers
+        # Build video filter chain
+        video_filters = []
+        
+        # Add subtitles filter if we have subtitles
+        subtitles_list = getattr(self, "subtitles", [])
+        subtitle_file = None
+        if subtitles_list:
+            try:
+                # Create ASS subtitle file
+                subtitle_file = self._create_ass_subtitle_file(subtitles_list, res_w, res_h)
+                if subtitle_file:
+                    # Escape path for FFmpeg filter
+                    escaped_path = subtitle_file.replace("\\", "/").replace(":", "\\:").replace("'", "\\'")
+                    video_filters.append(f"subtitles='{escaped_path}'")
+                    print(f"Created subtitle file: {subtitle_file}")
+            except Exception as e:
+                print(f"Error creating subtitles: {e}")
+        
+        # Apply video filters (subtitles only, stickers use separate overlay)
+        if video_filters:
+            cmd.extend(["-vf", ",".join(video_filters)])
+        
+        # Add overlay filter if we have stickers (separate filter_complex)
         if overlay_filter:
             cmd.extend(["-filter_complex", overlay_filter])
         
         cmd.extend([
             "-c:v",
             "libx264",
+            "-preset",
+            "fast",  # Use fast preset for quicker encoding
+            "-crf",
+            "23",  # Good quality/speed balance
             "-c:a",
-            "aac",  # Re-encode audio 
+            "aac",
+            "-b:a",
+            "192k",
             "-pix_fmt",
             "yuv420p",
             "-movflags",
-            "+faststart",  # Move moov atom to beginning for streaming
+            "+faststart",
             output_path,
         ])
         
         print(f"FFmpeg command: {' '.join(cmd)}")
 
         return cmd, concat_path
+
+    def _create_ass_subtitle_file(self, subtitles: List[Dict], video_width: int, video_height: int) -> Optional[str]:
+        """
+        Create an ASS subtitle file from subtitle clips.
+        Returns path to the created file.
+        """
+        if not subtitles:
+            return None
+        
+        # ASS header with styling (matching player preview style)
+        # Font size 56, white text, black outline (3px), centered at bottom
+        ass_header = f"""[Script Info]
+ScriptType: v4.00+
+PlayResX: {video_width}
+PlayResY: {video_height}
+WrapStyle: 0
+
+[V4+ Styles]
+Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
+Style: Default,Arial,56,&H00FFFFFF,&H000000FF,&H00000000,&H80000000,1,0,0,0,100,100,0,0,1,3,2,2,20,20,40,1
+
+[Events]
+Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
+"""
+        
+        events = []
+        for sub in subtitles:
+            start_time = sub.get("start_time", 0)
+            duration = sub.get("duration", 2)
+            text = sub.get("text_content", "").strip()
+            
+            if not text:
+                continue
+            
+            end_time = start_time + duration
+            
+            # Convert to ASS time format: H:MM:SS.CC
+            start_str = self._format_ass_time(start_time)
+            end_str = self._format_ass_time(end_time)
+            
+            # Escape special characters in ASS
+            text = text.replace("\\", "/").replace("{", "\\{").replace("}", "\\}")
+            text = text.replace("\n", "\\N")
+            
+            events.append(f"Dialogue: 0,{start_str},{end_str},Default,,0,0,0,,{text}")
+        
+        if not events:
+            return None
+        
+        # Write ASS file
+        ass_fd, ass_path = tempfile.mkstemp(suffix=".ass", prefix="subtitles_", text=True)
+        with os.fdopen(ass_fd, "w", encoding="utf-8") as f:
+            f.write(ass_header)
+            f.write("\n".join(events))
+        
+        return ass_path
+    
+    def _format_ass_time(self, seconds: float) -> str:
+        """Convert seconds to ASS time format H:MM:SS.CC"""
+        hours = int(seconds // 3600)
+        minutes = int((seconds % 3600) // 60)
+        secs = int(seconds % 60)
+        centisecs = int((seconds * 100) % 100)
+        return f"{hours}:{minutes:02d}:{secs:02d}.{centisecs:02d}"
 
 # Global instance
 render_engine = RenderEngine()

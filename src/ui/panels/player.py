@@ -699,7 +699,35 @@ class Player(QFrame):
         self.view.setResizeAnchor(QGraphicsView.ViewportAnchor.AnchorViewCenter)
         
         view_layout.addWidget(self.view)
+        
+        # Subtitle data storage
+        self._subtitle_clips = []  # Will be populated from timeline
+        
         layout.addWidget(view_container)
+        
+        # Subtitle Overlay Label (floating on top of video - matching export style)
+        # Create AFTER view_container is added so it overlays properly
+        self.subtitle_label = QLabel(view_container)
+        self.subtitle_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.subtitle_label.setWordWrap(True)
+        self.subtitle_label.setStyleSheet("""
+            QLabel {
+                background-color: transparent;
+                color: white;
+                font-size: 22px;
+                font-weight: bold;
+                font-family: Arial, sans-serif;
+                padding: 12px 24px;
+                /* Text shadow to simulate outline like in exported video */
+                text-shadow: 2px 2px 4px black, -2px -2px 4px black, 
+                             2px -2px 4px black, -2px 2px 4px black;
+            }
+        """)
+        self.subtitle_label.setMinimumWidth(200)
+        self.subtitle_label.hide()  # Hidden when no subtitle
+        
+        # Position will be updated when view resizes
+        self._update_subtitle_position()
         
         # --- Bottom Control Bar ---
         controls = QWidget()
@@ -931,6 +959,9 @@ class Player(QFrame):
         # position (ms) -> seconds on global timeline
         timeline_time = (position / 1000.0) + float(self.timeline_offset or 0.0)
         self.playhead_changed.emit(timeline_time)
+        
+        # Update subtitle display
+        self.update_subtitle_display(timeline_time)
 
     def on_duration_changed(self, duration):
         self.scrubber.setRange(0, duration)
@@ -1128,3 +1159,69 @@ class Player(QFrame):
         self.update_overlay()
         self.transform_changed.emit()
         event.accept()
+
+    def set_subtitles(self, subtitle_clips: list):
+        """
+        Set subtitle clips for display on player.
+        subtitle_clips: list of Clip objects with text_content, start_time, duration
+        """
+        self._subtitle_clips = subtitle_clips
+        print(f"Player: Set {len(subtitle_clips)} subtitle clips for display")
+    
+    def update_subtitle_display(self, timeline_time: float):
+        """
+        Update subtitle label based on current timeline position.
+        Shows the subtitle that should be visible at current time.
+        """
+        if not hasattr(self, 'subtitle_label'):
+            return
+        
+        if not hasattr(self, '_subtitle_clips') or not self._subtitle_clips:
+            self.subtitle_label.hide()
+            return
+        
+        # Find subtitle at current time
+        current_text = ""
+        for clip in self._subtitle_clips:
+            start = clip.start_time
+            end = start + clip.length
+            if start <= timeline_time < end:
+                current_text = getattr(clip, 'text_content', '') or clip.name
+                break
+        
+        if current_text:
+            self.subtitle_label.setText(current_text)
+            self._update_subtitle_position()
+            self.subtitle_label.show()
+            self.subtitle_label.raise_()  # Ensure it's on top
+        else:
+            self.subtitle_label.hide()
+
+    def _update_subtitle_position(self):
+        """Position subtitle label at bottom center of video container."""
+        if not hasattr(self, 'subtitle_label') or not hasattr(self, 'view'):
+            return
+        
+        # Get the view's parent (view_container) size
+        container = self.subtitle_label.parent()
+        if not container:
+            return
+        
+        container_width = container.width()
+        container_height = container.height()
+        
+        # Size the label to fit text
+        self.subtitle_label.adjustSize()
+        label_width = min(self.subtitle_label.width(), container_width - 40)
+        label_height = self.subtitle_label.height()
+        
+        # Position at bottom center
+        x = (container_width - label_width) // 2
+        y = container_height - label_height - 60  # 60px from bottom
+        
+        self.subtitle_label.setGeometry(x, y, label_width, label_height)
+
+    def resizeEvent(self, event):
+        """Handle resize to update subtitle position."""
+        super().resizeEvent(event)
+        self._update_subtitle_position()

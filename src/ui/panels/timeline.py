@@ -124,12 +124,15 @@ class Timeline(QFrame):
                 clip = track.clips[0]
                 self.timeline_widget.add_subtitle_track(segments, start_offset=clip.start_time)
             
+            # Pass subtitles to Player for live display
+            self._update_player_subtitles()
+            
             # Show success message
             QMessageBox.information(
                 self, 
                 "Auto Caption", 
                 f"✅ Đã tạo {len(segments)} đoạn subtitle!\n\n"
-                f"📍 Xem kết quả: Track 'Subtitles' trong Timeline\n"
+                f"📍 Subtitles sẽ hiển thị trên video khi play\n"
                 f"💡 Click vào đoạn subtitle để xem nội dung trong Inspector"
             )
         else:
@@ -137,6 +140,24 @@ class Timeline(QFrame):
         
         if self._progress_dialog:
             self._progress_dialog.accept()
+    
+    def _update_player_subtitles(self):
+        """Pass subtitle clips to Player for live display."""
+        try:
+            # Find parent edit_page to access player
+            parent = self.parent()
+            while parent:
+                if hasattr(parent, 'player'):
+                    # Get subtitle clips from timeline
+                    for track in self.timeline_widget.tracks:
+                        if track.name == "Subtitles":
+                            parent.player.set_subtitles(track.clips)
+                            print(f"Passed {len(track.clips)} subtitles to Player")
+                            break
+                    break
+                parent = parent.parent()
+        except Exception as e:
+            print(f"Error updating player subtitles: {e}")
     
     def _on_transcription_error(self, error: str):
         if self._progress_dialog:
