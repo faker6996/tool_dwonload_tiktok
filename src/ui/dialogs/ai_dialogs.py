@@ -11,21 +11,36 @@ class CaptionDialog(QDialog):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setWindowTitle("🎯 Auto Caption Settings")
-        self.setFixedSize(400, 200)
+        self.setFixedSize(450, 280)
         self.result_language = None
+        self.result_translate_to = None
         self.setup_ui()
     
     def setup_ui(self):
         layout = QVBoxLayout(self)
         layout.setSpacing(15)
         
-        # Language Selection
-        lang_group = QGroupBox("Ngôn ngữ trong video")
-        lang_layout = QHBoxLayout(lang_group)
+        # Mode Selection
+        mode_group = QGroupBox("Chế độ")
+        mode_layout = QVBoxLayout(mode_group)
         
-        lang_layout.addWidget(QLabel("Ngôn ngữ:"))
-        self.lang_combo = QComboBox()
-        self.lang_combo.addItems([
+        self.mode_combo = QComboBox()
+        self.mode_combo.addItems([
+            "📝 Transcribe (Giữ nguyên ngôn ngữ gốc)",
+            "🌐 Translate (Dịch sang ngôn ngữ khác)",
+        ])
+        self.mode_combo.currentIndexChanged.connect(self.on_mode_changed)
+        mode_layout.addWidget(self.mode_combo)
+        
+        layout.addWidget(mode_group)
+        
+        # Language Selection (for transcribe mode)
+        self.source_group = QGroupBox("Ngôn ngữ trong video")
+        source_layout = QHBoxLayout(self.source_group)
+        
+        source_layout.addWidget(QLabel("Ngôn ngữ:"))
+        self.source_lang_combo = QComboBox()
+        self.source_lang_combo.addItems([
             "🔄 Tự động phát hiện",
             "🇻🇳 Tiếng Việt",
             "🇺🇸 English",
@@ -33,17 +48,40 @@ class CaptionDialog(QDialog):
             "🇯🇵 日本語 (Japanese)",
             "🇰🇷 한국어 (Korean)",
         ])
-        self.lang_combo.setMinimumWidth(200)
-        lang_layout.addWidget(self.lang_combo)
-        lang_layout.addStretch()
+        self.source_lang_combo.setMinimumWidth(200)
+        source_layout.addWidget(self.source_lang_combo)
+        source_layout.addStretch()
         
-        layout.addWidget(lang_group)
+        layout.addWidget(self.source_group)
+        
+        # Target Language (for translate mode)
+        self.target_group = QGroupBox("Dịch sang ngôn ngữ")
+        target_layout = QHBoxLayout(self.target_group)
+        
+        target_layout.addWidget(QLabel("Dịch sang:"))
+        self.target_lang_combo = QComboBox()
+        self.target_lang_combo.addItems([
+            "🇻🇳 Tiếng Việt",
+            "🇺🇸 English",
+            "🇨🇳 中文 (Chinese)",
+            "🇯🇵 日本語 (Japanese)",
+            "🇰🇷 한국어 (Korean)",
+            "🇫🇷 Français",
+            "🇩🇪 Deutsch",
+            "🇪🇸 Español",
+        ])
+        self.target_lang_combo.setMinimumWidth(200)
+        target_layout.addWidget(self.target_lang_combo)
+        target_layout.addStretch()
+        
+        self.target_group.hide()  # Hidden by default
+        layout.addWidget(self.target_group)
         
         # Info label
-        info = QLabel("💡 Whisper AI sẽ transcribe audio thành text và tạo subtitles trên timeline.")
-        info.setWordWrap(True)
-        info.setStyleSheet("color: #a1a1aa; font-size: 11px;")
-        layout.addWidget(info)
+        self.info_label = QLabel("💡 Whisper AI sẽ transcribe audio thành text và tạo subtitles trên timeline.")
+        self.info_label.setWordWrap(True)
+        self.info_label.setStyleSheet("color: #a1a1aa; font-size: 11px;")
+        layout.addWidget(self.info_label)
         
         layout.addStretch()
         
@@ -62,21 +100,39 @@ class CaptionDialog(QDialog):
         
         layout.addLayout(btn_layout)
     
+    def on_mode_changed(self, index):
+        if index == 0:  # Transcribe mode
+            self.source_group.show()
+            self.target_group.hide()
+            self.info_label.setText("💡 Whisper AI sẽ transcribe audio thành text và tạo subtitles trên timeline.")
+        else:  # Translate mode
+            self.source_group.hide()
+            self.target_group.show()
+            self.info_label.setText("💡 Whisper AI sẽ transcribe audio rồi dịch sang ngôn ngữ đã chọn.")
+    
     def accept_with_settings(self):
         # Map combo selection to language code
-        lang_map = {
-            0: None,    # Auto-detect
-            1: "vi",    # Vietnamese
-            2: "en",    # English
-            3: "zh",    # Chinese
-            4: "ja",    # Japanese
-            5: "ko",    # Korean
+        source_lang_map = {
+            0: None, 1: "vi", 2: "en", 3: "zh", 4: "ja", 5: "ko",
         }
-        self.result_language = lang_map.get(self.lang_combo.currentIndex())
+        target_lang_map = {
+            0: "vi", 1: "en", 2: "zh", 3: "ja", 4: "ko", 5: "fr", 6: "de", 7: "es",
+        }
+        
+        if self.mode_combo.currentIndex() == 0:  # Transcribe
+            self.result_language = source_lang_map.get(self.source_lang_combo.currentIndex())
+            self.result_translate_to = None
+        else:  # Translate
+            self.result_language = None
+            self.result_translate_to = target_lang_map.get(self.target_lang_combo.currentIndex())
+        
         self.accept()
     
     def get_language(self):
         return self.result_language
+    
+    def get_translate_to(self):
+        return self.result_translate_to
 
 
 class TTSDialog(QDialog):

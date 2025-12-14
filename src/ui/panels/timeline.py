@@ -68,21 +68,27 @@ class Timeline(QFrame):
         dialog = CaptionDialog(self)
         if dialog.exec():
             language = dialog.get_language()
-            self.generate_captions(language)
+            translate_to = dialog.get_translate_to()
+            self.generate_captions(language, translate_to)
     
-    def generate_captions(self, language=None):
-        """Run transcription with selected language."""
+    def generate_captions(self, language=None, translate_to=None):
+        """Run transcription with selected language and optional translation."""
         track = self.timeline_widget.main_track
         if not track.clips:
             return
             
         clip = track.clips[0]
         
-        # Call Transcription Service with language
         from src.core.ai.transcription import transcription_service
         
-        print(f"Starting transcription with language: {language or 'auto-detect'}")
-        segments = transcription_service.transcribe(clip.asset_id, language=language)
+        if translate_to:
+            # Translate mode: transcribe then translate
+            print(f"Starting transcription + translation to: {translate_to}")
+            segments = transcription_service.transcribe_and_translate(clip.asset_id, target_language=translate_to)
+        else:
+            # Transcribe mode: just transcribe in specified language
+            print(f"Starting transcription with language: {language or 'auto-detect'}")
+            segments = transcription_service.transcribe(clip.asset_id, language=language)
         
         if segments:
             self.timeline_widget.add_subtitle_track(segments, start_offset=clip.start_time)

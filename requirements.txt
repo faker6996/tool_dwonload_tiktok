@@ -11,6 +11,7 @@ ffmpeg-python
 # AI Features
 openai-whisper
 edge-tts
+deep-translator
 
 # TikTok/Douyin Download
 pyktok
