@@ -121,11 +121,14 @@ jobs:
             --onedir `
             --add-data "assets;assets" `
             --add-binary "bin\ffmpeg.exe;bin" `
+            --collect-all "PyQt6" `
+            --hidden-import "PyQt6" `
             --hidden-import "PyQt6.QtCore" `
             --hidden-import "PyQt6.QtGui" `
             --hidden-import "PyQt6.QtWidgets" `
             --hidden-import "PyQt6.QtMultimedia" `
             --hidden-import "PyQt6.QtMultimediaWidgets" `
+            --hidden-import "PyQt6.sip" `
             --hidden-import "yt_dlp" `
             --hidden-import "PIL" `
             --hidden-import "PIL.Image" `
@@ -133,6 +136,7 @@ jobs:
             --hidden-import "deep_translator" `
             --hidden-import "edge_tts" `
             --hidden-import "whisper" `
+            --hidden-import "requests" `
             --exclude-module "matplotlib" `
             --exclude-module "pandas" `
             --noconfirm `
