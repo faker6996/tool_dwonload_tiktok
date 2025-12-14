@@ -34,11 +34,15 @@ class ClipWidget(QFrame):
         rect = self.rect()
         
         # Determine Colors based on Type
+        clip_type = getattr(self.clip, 'clip_type', None)
+        is_text = clip_type == "text" or getattr(self.clip, 'text_content', None)
         is_audio = getattr(self.clip, 'is_audio', False) or self.clip.asset_id.endswith(('.mp3', '.wav'))
-        # Note: Clip model might not have is_audio, check asset extension or metadata if possible.
-        # For now, let's assume if it has waveform it's audio, or check extension.
         
-        if is_audio:
+        if is_text:
+            bg_color = QColor("#3d2f14")  # Dark Yellow/Orange
+            border_color = QColor("#fbbf24")  # Bright Yellow
+            accent_color = QColor("#f59e0b")
+        elif is_audio:
             bg_color = QColor("#1e3a2f") # Dark Green
             border_color = QColor("#10B981") # Bright Green
             accent_color = QColor("#059669")

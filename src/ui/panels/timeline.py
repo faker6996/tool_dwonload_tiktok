@@ -78,38 +78,55 @@ class Timeline(QFrame):
         self.timeline_widget.add_subtitle_track(segments, start_offset=clip.start_time)
 
     def open_tts_dialog(self):
-        text, ok = QInputDialog.getText(self, "Text to Speech", "Enter text to generate speech:")
+        text, ok = QInputDialog.getText(self, "Text to Speech", "Enter text to generate speech (Vietnamese/English):")
         if ok and text:
             from src.core.ai.tts import tts_service
             import os
             import tempfile
+            import time
             from src.core.timeline.clip import Clip
             from src.core.timeline.track import Track
             
-            # Generate Audio
+            # Generate Audio (edge-tts generates MP3)
             temp_dir = tempfile.gettempdir()
-            output_path = os.path.join(temp_dir, f"tts_{int(time.time())}.wav")
-            import time # Need time import inside or top level
+            output_path = os.path.join(temp_dir, f"tts_{int(time.time())}.mp3")
             
-            tts_service.generate_speech(text, output_path)
-            
-            # Add to Timeline (New Audio Track)
-            # Create Audio Track if not exists
-            # For MVP, just append a new track
-            audio_track = Track("AI Voiceover", is_audio=True)
-            self.timeline_widget.tracks.append(audio_track)
-            
-            # Create Clip
-            # We need duration. TTSService logic: max(1.0, words * 0.5)
-            words = len(text.split())
-            duration = max(1.0, words * 0.5)
-            
-            clip = Clip(
-                asset_id=output_path,
-                name=f"TTS: {text[:10]}...",
-                duration=duration,
-                waveform_path=None # TODO: Generate waveform for TTS
-            )
-            audio_track.clips.append(clip)
-            
-            self.timeline_widget.refresh_tracks()
+            try:
+                tts_service.generate_speech(text, output_path)
+                
+                # Get actual audio duration using mutagen if available, otherwise estimate
+                try:
+                    from mutagen.mp3 import MP3
+                    audio = MP3(output_path)
+                    duration = audio.info.length
+                except:
+                    # Fallback: estimate based on text length
+                    words = len(text.split())
+                    duration = max(1.0, words * 0.4)
+                
+                # Find or create AI Voiceover track
+                audio_track = None
+                for track in self.timeline_widget.tracks:
+                    if track.name == "AI Voiceover":
+                        audio_track = track
+                        break
+                
+                if not audio_track:
+                    audio_track = Track("AI Voiceover", is_audio=True)
+                    self.timeline_widget.tracks.append(audio_track)
+                
+                # Create Clip
+                clip = Clip(
+                    asset_id=output_path,
+                    name=f"🎤 {text[:20]}..." if len(text) > 20 else f"🎤 {text}",
+                    duration=duration,
+                    waveform_path=None
+                )
+                audio_track.clips.append(clip)
+                
+                self.timeline_widget.refresh_tracks()
+                print(f"TTS audio added: {duration:.1f}s")
+                
+            except Exception as e:
+                print(f"TTS Error: {e}")
+

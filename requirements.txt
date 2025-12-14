@@ -1,7 +1,23 @@
+# Core
 PyQt6
 requests
-pyktok
-playwright
-pyinstaller
 yt-dlp
 qtawesome
+
+# Video/Audio Processing
+pillow
+ffmpeg-python
+
+# AI Features
+openai-whisper
+edge-tts
+
+# TikTok/Douyin Download
+pyktok
+playwright
+
+# Build
+pyinstaller
+
+# Optional - for audio duration detection
+mutagen
