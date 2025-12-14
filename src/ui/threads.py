@@ -35,7 +35,14 @@ class PreviewDownloaderThread(QThread):
             except:
                 pass
                 
-        success = self.downloader.download_video(self.url, self.temp_path, self.platform, self.cookies)
+        result = self.downloader.download_video(self.url, self.temp_path, self.platform, self.cookies)
+        
+        # Handle both dict and bool return types
+        if isinstance(result, dict):
+            success = result.get('status') == 'success'
+        else:
+            success = bool(result)
+            
         self.finished.emit(success, self.temp_path)
 
 class DownloaderThread(QThread):
@@ -61,7 +68,14 @@ class DownloaderThread(QThread):
                 print(f"Copy failed: {e}")
                 # Fallback to download
         
-        success = self.downloader.download_video(self.url, self.filename, self.platform, self.cookies)
+        result = self.downloader.download_video(self.url, self.filename, self.platform, self.cookies)
+        
+        # Handle both dict and bool return types
+        if isinstance(result, dict):
+            success = result.get('status') == 'success'
+        else:
+            success = bool(result)
+            
         self.finished.emit(success, self.filename)
 
 class IngestionThread(QThread):

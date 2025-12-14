@@ -17,6 +17,7 @@ class DownloadPage(QWidget):
         self.current_platform = None
         self.current_cookies = None
         self.temp_preview_path = None
+        self.video_title = None  # Store video title for auto-naming
 
     def setup_ui(self):
         layout = QVBoxLayout(self)
@@ -58,6 +59,20 @@ class DownloadPage(QWidget):
         self.video_widget = QVideoWidget()
         preview_layout.addWidget(self.video_widget)
         
+        # Video Controls
+        controls_layout = QHBoxLayout()
+        controls_layout.setContentsMargins(10, 5, 10, 5)
+        
+        self.play_pause_btn = QPushButton("▶ Play")
+        self.play_pause_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.play_pause_btn.setFixedWidth(100)
+        self.play_pause_btn.clicked.connect(self.toggle_play_pause)
+        self.play_pause_btn.setEnabled(False)
+        controls_layout.addWidget(self.play_pause_btn)
+        
+        controls_layout.addStretch()
+        preview_layout.addLayout(controls_layout)
+        
         layout.addWidget(self.preview_frame)
 
         # Initialize downloader
@@ -68,6 +83,7 @@ class DownloadPage(QWidget):
         self.audio_output = QAudioOutput()
         self.media_player.setAudioOutput(self.audio_output)
         self.media_player.setVideoOutput(self.video_widget)
+        self.media_player.playbackStateChanged.connect(self.on_playback_state_changed)
 
         # Action Area
         action_layout = QHBoxLayout()
@@ -119,6 +135,7 @@ class DownloadPage(QWidget):
             self.current_video_url = info['url']
             self.current_platform = info['platform']
             self.current_cookies = info.get('cookies')
+            self.video_title = info.get('title', '')  # Store title for filename
             
             # Start preview download
             self.preview_thread = PreviewDownloaderThread(self.current_video_url, self.current_platform, self.current_cookies)
@@ -136,6 +153,7 @@ class DownloadPage(QWidget):
             self.status_label.setText("Preview ready. Click 'Save Video' to keep it.")
             self.temp_preview_path = path
             self.download_btn.setEnabled(True)
+            self.play_pause_btn.setEnabled(True)
             
             # Play local file
             self.media_player.setSource(QUrl.fromLocalFile(path))
@@ -154,8 +172,23 @@ class DownloadPage(QWidget):
         if not self.current_video_url:
             return
 
+        # Auto-generate filename from video title
+        import re
+        import time
+        
+        if self.video_title:
+            # Sanitize title: remove special chars, emoji, limit length
+            safe_title = re.sub(r'[^\w\s\u4e00-\u9fff-]', '', self.video_title)
+            safe_title = safe_title.strip()[:50]  # Limit to 50 chars
+            if not safe_title:
+                safe_title = f"video_{self.current_platform}"
+        else:
+            safe_title = f"video_{self.current_platform}_{int(time.time())}"
+        
+        default_filename = f"{safe_title}.mp4"
+
         file_filter = "MP4 Video (*.mp4)"
-        filename, _ = QFileDialog.getSaveFileName(self, "Save Video", f"video_{self.current_platform}.mp4", file_filter)
+        filename, _ = QFileDialog.getSaveFileName(self, "Save Video", default_filename, file_filter)
         
         if filename:
             self.status_label.setText("Saving...")
@@ -172,12 +205,29 @@ class DownloadPage(QWidget):
         self.download_btn.setEnabled(True)
         self.progress_bar.setVisible(False)
         
+        # Auto-pause video on download complete
+        self.media_player.pause()
+        
         if success:
             self.status_label.setText("Saved successfully!")
             QMessageBox.information(self, "Success", f"Video saved to:\n{filename}")
         else:
             self.status_label.setText("Save failed.")
             QMessageBox.critical(self, "Error", "Failed to save video.")
+    
+    def toggle_play_pause(self):
+        """Toggle between play and pause states."""
+        if self.media_player.playbackState() == QMediaPlayer.PlaybackState.PlayingState:
+            self.media_player.pause()
+        else:
+            self.media_player.play()
+    
+    def on_playback_state_changed(self, state):
+        """Update play/pause button text based on playback state."""
+        if state == QMediaPlayer.PlaybackState.PlayingState:
+            self.play_pause_btn.setText("⏸ Pause")
+        else:
+            self.play_pause_btn.setText("▶ Play")
 
     def cleanup(self):
         # Cleanup temp file

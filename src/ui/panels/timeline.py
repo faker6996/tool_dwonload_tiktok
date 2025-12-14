@@ -1,4 +1,4 @@
-from PyQt6.QtWidgets import QFrame, QVBoxLayout, QLabel, QHBoxLayout, QPushButton, QSlider, QWidget, QInputDialog, QMessageBox
+from PyQt6.QtWidgets import QFrame, QVBoxLayout, QLabel, QHBoxLayout, QPushButton, QWidget, QMessageBox
 from PyQt6.QtCore import Qt
 from src.ui.timeline.timeline_widget import TimelineWidget
 
@@ -9,6 +9,11 @@ class Timeline(QFrame):
         self.setObjectName("panel")
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
+        
+        # Worker references to prevent garbage collection
+        self._transcription_worker = None
+        self._tts_worker = None
+        self._progress_dialog = None
         
         # Header
         header_container = QWidget()
@@ -69,32 +74,76 @@ class Timeline(QFrame):
         if dialog.exec():
             language = dialog.get_language()
             translate_to = dialog.get_translate_to()
-            self.generate_captions(language, translate_to)
+            self.start_transcription(language, translate_to)
     
-    def generate_captions(self, language=None, translate_to=None):
-        """Run transcription with selected language and optional translation."""
+    def start_transcription(self, language=None, translate_to=None):
+        """Start transcription with progress dialog."""
+        from src.ui.dialogs.ai_progress import AIProgressDialog, TranscriptionWorker
+        
         track = self.timeline_widget.main_track
         if not track.clips:
             return
             
         clip = track.clips[0]
         
-        from src.core.ai.transcription import transcription_service
-        
+        # Show progress dialog
         if translate_to:
-            # Translate mode: transcribe then translate
-            print(f"Starting transcription + translation to: {translate_to}")
-            segments = transcription_service.transcribe_and_translate(clip.asset_id, target_language=translate_to)
+            title = "🌐 Đang dịch..."
+            msg = f"Transcribe và dịch sang {translate_to.upper()}"
         else:
-            # Transcribe mode: just transcribe in specified language
-            print(f"Starting transcription with language: {language or 'auto-detect'}")
-            segments = transcription_service.transcribe(clip.asset_id, language=language)
+            title = "🎯 Auto Caption"
+            msg = "Đang transcribe audio..."
+            
+        self._progress_dialog = AIProgressDialog(self, title=title, message=msg)
+        self._progress_dialog.set_status("⏳ Đang tải model AI...")
         
+        # Create worker thread
+        self._transcription_worker = TranscriptionWorker(clip.asset_id, language, translate_to)
+        self._transcription_worker.progress.connect(self._on_transcription_progress)
+        self._transcription_worker.finished.connect(self._on_transcription_finished)
+        self._transcription_worker.error.connect(self._on_transcription_error)
+        self._transcription_worker.start()
+        
+        self._progress_dialog.exec()
+    
+    def _on_transcription_progress(self, status: str):
+        if self._progress_dialog:
+            self._progress_dialog.set_status(status)
+    
+    def _on_transcription_finished(self, segments: list):
+        if self._progress_dialog:
+            self._progress_dialog.set_complete(True)
+            self._progress_dialog.set_status(f"✅ Hoàn thành! Tạo được {len(segments)} đoạn subtitle.")
+            
         if segments:
-            self.timeline_widget.add_subtitle_track(segments, start_offset=clip.start_time)
-            print(f"Added {len(segments)} subtitle clips")
+            track = self.timeline_widget.main_track
+            if track.clips:
+                clip = track.clips[0]
+                self.timeline_widget.add_subtitle_track(segments, start_offset=clip.start_time)
+            
+            # Show success message
+            QMessageBox.information(
+                self, 
+                "Auto Caption", 
+                f"✅ Đã tạo {len(segments)} đoạn subtitle!\n\n"
+                f"📍 Xem kết quả: Track 'Subtitles' trong Timeline\n"
+                f"💡 Click vào đoạn subtitle để xem nội dung trong Inspector"
+            )
         else:
-            QMessageBox.warning(self, "Auto Caption", "Không thể tạo caption. Kiểm tra file video.")
+            QMessageBox.warning(self, "Auto Caption", "Không tìm thấy lời nói trong video.")
+        
+        if self._progress_dialog:
+            self._progress_dialog.accept()
+    
+    def _on_transcription_error(self, error: str):
+        if self._progress_dialog:
+            self._progress_dialog.set_complete(False)
+            self._progress_dialog.set_status(f"❌ Lỗi: {error}")
+        
+        QMessageBox.critical(self, "Auto Caption Error", f"Lỗi khi transcribe:\n{error}")
+        
+        if self._progress_dialog:
+            self._progress_dialog.accept()
 
     def open_tts_dialog(self):
         """Open TTS dialog with voice selection."""
@@ -106,56 +155,89 @@ class Timeline(QFrame):
             voice = dialog.get_voice()
             
             if text:
-                self.generate_tts(text, voice)
+                self.start_tts(text, voice)
     
-    def generate_tts(self, text: str, voice: str):
-        """Generate TTS audio with selected voice."""
-        from src.core.ai.tts import tts_service
+    def start_tts(self, text: str, voice: str):
+        """Start TTS generation with progress dialog."""
+        from src.ui.dialogs.ai_progress import AIProgressDialog, TTSWorker
         import os
         import tempfile
         import time
-        from src.core.timeline.clip import Clip
-        from src.core.timeline.track import Track
         
-        # Generate Audio
+        # Generate output path
         temp_dir = tempfile.gettempdir()
         output_path = os.path.join(temp_dir, f"tts_{int(time.time())}.mp3")
         
-        try:
-            tts_service.generate_speech(text, output_path, voice=voice)
-            
-            # Get audio duration
-            try:
-                from mutagen.mp3 import MP3
-                audio = MP3(output_path)
-                duration = audio.info.length
-            except:
-                words = len(text.split())
-                duration = max(1.0, words * 0.4)
-            
-            # Find or create AI Voiceover track
-            audio_track = None
-            for track in self.timeline_widget.tracks:
-                if track.name == "AI Voiceover":
-                    audio_track = track
-                    break
-            
-            if not audio_track:
-                audio_track = Track("AI Voiceover", is_audio=True)
-                self.timeline_widget.tracks.append(audio_track)
-            
-            # Create Clip
-            clip = Clip(
-                asset_id=output_path,
-                name=f"🎤 {text[:20]}..." if len(text) > 20 else f"🎤 {text}",
-                duration=duration,
-                waveform_path=None
-            )
-            audio_track.clips.append(clip)
-            
-            self.timeline_widget.refresh_tracks()
-            print(f"TTS audio added: {duration:.1f}s with voice: {voice}")
-            
-        except Exception as e:
-            print(f"TTS Error: {e}")
-            QMessageBox.critical(self, "TTS Error", f"Không thể tạo audio:\n{str(e)}")
+        # Show progress dialog
+        self._progress_dialog = AIProgressDialog(
+            self, 
+            title="🎤 Text to Speech",
+            message="Đang tạo giọng nói..."
+        )
+        self._progress_dialog.set_status(f"🔊 Voice: {voice}")
+        
+        # Create worker thread
+        self._tts_worker = TTSWorker(text, output_path, voice)
+        self._tts_worker.progress.connect(self._on_tts_progress)
+        self._tts_worker.finished.connect(lambda path, dur: self._on_tts_finished(path, dur, text))
+        self._tts_worker.error.connect(self._on_tts_error)
+        self._tts_worker.start()
+        
+        self._progress_dialog.exec()
+    
+    def _on_tts_progress(self, status: str):
+        if self._progress_dialog:
+            self._progress_dialog.set_status(status)
+    
+    def _on_tts_finished(self, output_path: str, duration: float, text: str):
+        from src.core.timeline.clip import Clip
+        from src.core.timeline.track import Track
+        
+        if self._progress_dialog:
+            self._progress_dialog.set_complete(True)
+            self._progress_dialog.set_status(f"✅ Hoàn thành! Duration: {duration:.1f}s")
+        
+        # Find or create AI Voiceover track
+        audio_track = None
+        for track in self.timeline_widget.tracks:
+            if track.name == "AI Voiceover":
+                audio_track = track
+                break
+        
+        if not audio_track:
+            audio_track = Track("AI Voiceover", is_audio=True)
+            self.timeline_widget.tracks.append(audio_track)
+        
+        # Create Clip
+        clip = Clip(
+            asset_id=output_path,
+            name=f"🎤 {text[:20]}..." if len(text) > 20 else f"🎤 {text}",
+            duration=duration,
+            waveform_path=None
+        )
+        audio_track.clips.append(clip)
+        
+        self.timeline_widget.refresh_tracks()
+        
+        # Show success message
+        QMessageBox.information(
+            self, 
+            "Text to Speech", 
+            f"✅ Đã tạo audio thành công!\n\n"
+            f"⏱ Duration: {duration:.1f} giây\n"
+            f"📍 Xem kết quả: Track 'AI Voiceover' trong Timeline\n"
+            f"🔊 Click Play để nghe audio"
+        )
+        
+        if self._progress_dialog:
+            self._progress_dialog.accept()
+    
+    def _on_tts_error(self, error: str):
+        if self._progress_dialog:
+            self._progress_dialog.set_complete(False)
+            self._progress_dialog.set_status(f"❌ Lỗi: {error}")
+        
+        QMessageBox.critical(self, "TTS Error", f"Lỗi khi tạo giọng nói:\n{error}")
+        
+        if self._progress_dialog:
+            self._progress_dialog.accept()
