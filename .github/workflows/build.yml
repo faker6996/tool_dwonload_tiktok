@@ -7,7 +7,7 @@ on:
       - "v*"
   pull_request:
     branches: [main, master]
-  workflow_dispatch: # Manual trigger
+  workflow_dispatch:
 
 jobs:
   build-macos:
@@ -59,17 +59,32 @@ jobs:
             --noconfirm \
             main.py
 
+      - name: Install create-dmg
+        run: brew install create-dmg
+
       - name: Create DMG
         run: |
-          # Create a simple zip for now
-          cd dist
-          zip -r ../VideoEditor-macOS.zip VideoEditor.app
+          create-dmg \
+            --volname "Video Editor" \
+            --volicon "assets/app_icon.icns" \
+            --window-pos 200 120 \
+            --window-size 600 400 \
+            --icon-size 100 \
+            --icon "VideoEditor.app" 150 185 \
+            --hide-extension "VideoEditor.app" \
+            --app-drop-link 450 185 \
+            "VideoEditor-macOS.dmg" \
+            "dist/VideoEditor.app" || \
+          # Fallback to zip if DMG creation fails
+          (cd dist && zip -r ../VideoEditor-macOS.zip VideoEditor.app)
 
       - name: Upload macOS artifact
         uses: actions/upload-artifact@v4
         with:
           name: VideoEditor-macOS
-          path: VideoEditor-macOS.zip
+          path: |
+            VideoEditor-macOS.dmg
+            VideoEditor-macOS.zip
 
   build-windows:
     runs-on: windows-latest
@@ -103,7 +118,7 @@ jobs:
         run: |
           pyinstaller --name "VideoEditor" `
             --windowed `
-            --onefile `
+            --onedir `
             --add-data "assets;assets" `
             --add-binary "bin\ffmpeg.exe;bin" `
             --hidden-import "PyQt6.QtCore" `
@@ -124,11 +139,24 @@ jobs:
             main.py
         shell: powershell
 
+      - name: Install Inno Setup
+        run: choco install innosetup -y
+        shell: cmd
+
+      - name: Create installer directory
+        run: mkdir installer
+        shell: cmd
+
+      - name: Build Installer with Inno Setup
+        run: |
+          & "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" "scripts\installer.iss"
+        shell: powershell
+
       - name: Upload Windows artifact
         uses: actions/upload-artifact@v4
         with:
           name: VideoEditor-Windows
-          path: dist/VideoEditor.exe
+          path: installer/VideoEditor-Setup.exe
 
   release:
     needs: [build-macos, build-windows]
@@ -146,12 +174,16 @@ jobs:
         with:
           name: VideoEditor-Windows
 
+      - name: List files
+        run: ls -la
+
       - name: Create Release
         uses: softprops/action-gh-release@v1
         with:
           files: |
+            VideoEditor-macOS.dmg
             VideoEditor-macOS.zip
-            VideoEditor.exe
+            VideoEditor-Setup.exe
           draft: false
           prerelease: false
         env:
