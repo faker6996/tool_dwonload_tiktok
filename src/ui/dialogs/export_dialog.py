@@ -44,7 +44,14 @@ class ExportDialog(QDialog):
         # Resolution
         settings_layout.addWidget(QLabel("Resolution:"))
         self.res_combo = QComboBox()
-        self.res_combo.addItems(["1920x1080", "1280x720", "3840x2160"])
+        self.res_combo.addItems([
+            "1080x1920 (TikTok/Reels)",  # Vertical
+            "1920x1080 (Full HD)",        # Horizontal
+            "720x1280 (HD Vertical)",     # Vertical
+            "1280x720 (HD)",              # Horizontal
+            "2160x3840 (4K Vertical)",    # Vertical
+            "3840x2160 (4K)",             # Horizontal
+        ])
         settings_layout.addWidget(self.res_combo)
         
         # FPS
@@ -175,8 +182,12 @@ class ExportDialog(QDialog):
         except Exception as e:
             print(f"Error collecting stickers: {e}")
 
+        # Extract just resolution numbers (e.g. "1080x1920 (TikTok/Reels)" -> "1080x1920")
+        resolution_text = self.res_combo.currentText()
+        resolution = resolution_text.split(" ")[0]  # Get "1080x1920" from "1080x1920 (TikTok/Reels)"
+        
         settings = {
-            "resolution": self.res_combo.currentText(),
+            "resolution": resolution,
             "fps": int(self.fps_combo.currentText())
         }
         
