@@ -80,6 +80,8 @@ class Timeline(QFrame):
         """Start transcription with progress dialog."""
         from src.ui.dialogs.ai_progress import AIProgressDialog, TranscriptionWorker
         
+        print(f"[DEBUG] start_transcription called with language={language}, translate_to={translate_to}")
+        
         track = self.timeline_widget.main_track
         if not track.clips:
             return
@@ -98,6 +100,7 @@ class Timeline(QFrame):
         self._progress_dialog.set_status("⏳ Đang tải model AI...")
         
         # Create worker thread
+        print(f"[DEBUG] Creating TranscriptionWorker with file={clip.asset_id}, translate_to={translate_to}")
         self._transcription_worker = TranscriptionWorker(clip.asset_id, language, translate_to)
         self._transcription_worker.progress.connect(self._on_transcription_progress)
         self._transcription_worker.finished.connect(self._on_transcription_finished)

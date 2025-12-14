@@ -65,6 +65,8 @@ class TranscriptionService:
         Returns:
             List of translated segments: {'start': float, 'end': float, 'text': str}
         """
+        print(f"[DEBUG] transcribe_and_translate called with target_language={target_language}")
+        
         # First transcribe in original language
         segments = self.transcribe(file_path, language=None)  # Auto-detect
         
@@ -76,7 +78,7 @@ class TranscriptionService:
             return self._transcribe_to_english(file_path)
         
         # For other languages, use deep-translator
-        print(f"Translating {len(segments)} segments to '{target_language}'...")
+        print(f"[DEBUG] Translating {len(segments)} segments to '{target_language}' using GoogleTranslator...")
         
         try:
             from deep_translator import GoogleTranslator

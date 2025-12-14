@@ -114,7 +114,7 @@ class TimelineWidget(QFrame):
         # can't scroll for long videos.
         scroll.setWidgetResizable(False)
         scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
-        scroll.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        scroll.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)  # Enable vertical scroll for multiple tracks
         scroll.setStyleSheet("border: none; background-color: #131315;")
         
         self.tracks_container = QWidget()
@@ -143,7 +143,9 @@ class TimelineWidget(QFrame):
     def refresh_tracks(self):
         # Clear existing track widgets
         for i in reversed(range(self.tracks_layout.count())):
-            self.tracks_layout.itemAt(i).widget().setParent(None)
+            item = self.tracks_layout.itemAt(i)
+            if item and item.widget():
+                item.widget().setParent(None)
             
         # Add track widgets
         for track in self.tracks:
@@ -151,7 +153,15 @@ class TimelineWidget(QFrame):
             widget.clip_selected.connect(self.on_clip_selected)
             self.tracks_layout.addWidget(widget)
 
+        # Update container size for proper scrolling
         self._update_timeline_width()
+        
+        # Update height based on number of tracks (each track is 90px)
+        track_height = 90
+        total_height = max(200, len(self.tracks) * track_height + 20)
+        self.tracks_container.setMinimumHeight(total_height)
+        
+        print(f"Timeline refreshed: {len(self.tracks)} tracks")
 
     def on_clip_selected(self, clip):
         self.clip_selected.emit(clip)
