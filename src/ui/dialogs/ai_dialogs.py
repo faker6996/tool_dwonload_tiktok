@@ -30,6 +30,7 @@ class CaptionDialog(QDialog):
         self.mode_combo.addItems([
             "📝 Transcribe (Tạo sub từ audio)",
             "🌐 Translate (Dịch sub sang ngôn ngữ khác)",
+            "👁️ OCR Extract (Đọc sub từ video - không cần audio)",
         ])
         self.mode_combo.currentIndexChanged.connect(self.on_mode_changed)
         mode_layout.addWidget(self.mode_combo)
@@ -190,7 +191,7 @@ class CaptionDialog(QDialog):
             self.remove_group.hide()
             self.info_label.setText("💡 Whisper AI sẽ transcribe audio thành text và tạo subtitles trên timeline.")
             self.info_label.setStyleSheet("color: #a1a1aa; font-size: 11px;")
-        else:  # Translate mode
+        elif index == 1:  # Translate mode
             self.source_group.hide()
             self.target_group.show()
             self.provider_group.show()
@@ -198,9 +199,17 @@ class CaptionDialog(QDialog):
             self.remove_sub_checkbox.show()
             self.info_label.setText("💡 Whisper AI sẽ transcribe audio rồi dịch sang ngôn ngữ đã chọn.")
             self.info_label.setStyleSheet("color: #a1a1aa; font-size: 11px;")
+        else:  # OCR Extract mode (index == 2)
+            self.source_group.hide()
+            self.target_group.show()  # Show target language for translation
+            self.provider_group.show()
+            self.remove_sub_checkbox.show()
+            self.remove_sub_checkbox.setChecked(True)  # Default: remove sub first
+            self.info_label.setText("👁️ OCR sẽ đọc text từ video frame và dịch. Không cần audio!")
+            self.info_label.setStyleSheet("color: #22c55e; font-size: 11px;")
         
         # Keep remove_group visibility based on checkbox
-        self.remove_group.setVisible(self.remove_sub_checkbox.isChecked() and index == 1)
+        self.remove_group.setVisible(self.remove_sub_checkbox.isChecked() and index >= 1)
     
     def on_remove_sub_changed(self, state):
         """Show/hide remove settings when checkbox is toggled."""
@@ -251,8 +260,12 @@ class CaptionDialog(QDialog):
             self.result_mode = "transcribe"
             self.result_language = source_lang_map.get(self.source_lang_combo.currentIndex())
             self.result_translate_to = None
-        else:  # Translate
+        elif mode_index == 1:  # Translate
             self.result_mode = "translate"
+            self.result_language = None
+            self.result_translate_to = target_lang_map.get(self.target_lang_combo.currentIndex())
+        else:  # OCR Extract (mode_index == 2)
+            self.result_mode = "ocr"
             self.result_language = None
             self.result_translate_to = target_lang_map.get(self.target_lang_combo.currentIndex())
         

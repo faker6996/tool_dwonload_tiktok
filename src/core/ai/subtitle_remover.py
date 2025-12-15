@@ -145,15 +145,15 @@ class SubtitleRemoverService:
                     if not ret:
                         continue
                     
-                    # Only search in bottom 40% of frame
-                    search_y = int(height * 0.60)
-                    roi = frame[search_y:, :]
+                    # Scan entire frame (text can be anywhere)
+                    search_y = 0
+                    roi = frame  # Use full frame
                     
                     # Detect text with EasyOCR
                     results = reader.readtext(roi)
                     
                     for (bbox, text, prob) in results:
-                        if prob > 0.3:  # Confidence threshold
+                        if prob > 0.1 and text.strip():  # Lower threshold, ensure non-empty text
                             # bbox is [[x1,y1], [x2,y1], [x2,y2], [x1,y2]]
                             x1, y1 = int(bbox[0][0]), int(bbox[0][1])
                             x2, y2 = int(bbox[2][0]), int(bbox[2][1])
@@ -161,6 +161,7 @@ class SubtitleRemoverService:
                             
                             # Convert back to full frame coordinates
                             all_text_boxes.append((x1, y1 + search_y, w, h))
+                            print(f"    📝 Detected: '{text[:30]}...' (conf: {prob:.2f})")
                     
                     print(f"  Frame {i+1}/{num_samples}: Found {len(results)} text regions")
                 

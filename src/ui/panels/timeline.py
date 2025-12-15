@@ -61,7 +61,7 @@ class Timeline(QFrame):
         layout.addWidget(self.timeline_widget)
 
     def open_caption_dialog(self):
-        """Open dialog to configure and run auto sub (transcribe, translate, or remove)."""
+        """Open dialog to configure and run auto sub (transcribe, translate, OCR, or remove)."""
         from src.ui.dialogs.ai_dialogs import CaptionDialog
         
         # Check if there's a clip
@@ -72,14 +72,21 @@ class Timeline(QFrame):
         
         dialog = CaptionDialog(self)
         if dialog.exec():
-            mode = dialog.get_mode()  # "transcribe" or "translate"
+            mode = dialog.get_mode()  # "transcribe", "translate", or "ocr"
             remove_settings = dialog.get_remove_settings()  # None if checkbox not checked
             
             # Store params for after remove
             language = dialog.get_language()
             translate_to = dialog.get_translate_to()
             
-            if remove_settings:
+            if mode == "ocr":
+                # OCR Extract mode - read text from ORIGINAL video first
+                # Then remove sub, then overlay translated subtitles
+                self._pending_ocr_remove_settings = remove_settings  # Store for after OCR
+                self._pending_ocr_translate_to = translate_to
+                # Start OCR extraction on ORIGINAL video (not the removed one)
+                self.start_ocr_extraction(translate_to, remove_after=bool(remove_settings))
+            elif remove_settings:
                 # Run remove sub first, then transcription
                 self._pending_transcription = (language, translate_to)
                 self.start_subtitle_removal(remove_settings, then_transcribe=True)
@@ -119,6 +126,107 @@ class Timeline(QFrame):
         self._transcription_worker.error.connect(self._on_transcription_error)
         self._transcription_worker.rate_limit.connect(self._on_rate_limit)
         self._transcription_worker.start()
+    
+    def start_ocr_extraction(self, translate_to=None, remove_after=False):
+        """Start OCR subtitle extraction from video frames."""
+        from PyQt6.QtCore import QThread, pyqtSignal
+        
+        print(f"👁️ Starting OCR subtitle extraction, translate_to={translate_to}, remove_after={remove_after}")
+        
+        track = self.timeline_widget.main_track
+        if not track.clips:
+            return
+            
+        clip = track.clips[0]
+        video_path = clip.asset_id
+        
+        # Store for later (remove sub after OCR)
+        self._ocr_original_video = video_path
+        self._ocr_remove_after = remove_after
+        
+        # Create worker thread for OCR
+        class OCRWorker(QThread):
+            finished = pyqtSignal(list)
+            error = pyqtSignal(str)
+            progress = pyqtSignal(str)
+            
+            def __init__(self, video_path, translate_to):
+                super().__init__()
+                self.video_path = video_path
+                self.translate_to = translate_to
+            
+            def run(self):
+                try:
+                    from src.core.ai.ocr_subtitle import ocr_subtitle_extractor
+                    
+                    self.progress.emit("🔍 Đang quét video với OCR...")
+                    segments = ocr_subtitle_extractor.extract_subtitles(
+                        self.video_path,
+                        target_lang=self.translate_to or "vi",
+                        fps_sample=1.0,  # 1 frame per second
+                        translate=bool(self.translate_to)
+                    )
+                    self.finished.emit(segments)
+                except Exception as e:
+                    import traceback
+                    traceback.print_exc()
+                    self.error.emit(str(e))
+        
+        self._ocr_worker = OCRWorker(video_path, translate_to)
+        self._ocr_worker.finished.connect(self._on_ocr_finished)
+        self._ocr_worker.error.connect(self._on_ocr_error)
+        self._ocr_worker.progress.connect(lambda msg: print(msg))
+        self._ocr_worker.start()
+    
+    def _on_ocr_finished(self, segments: list):
+        """Handle OCR extraction completion."""
+        print(f"✅ OCR extraction complete! Found {len(segments)} subtitle segments.")
+        
+        if not segments:
+            QMessageBox.warning(self, "OCR Extract", "Không tìm thấy text trong video.")
+            return
+        
+        # Store OCR segments for later (after sub removal)
+        self._ocr_segments = segments
+        
+        # Check if we need to remove sub first
+        remove_after = getattr(self, '_ocr_remove_after', False)
+        remove_settings = getattr(self, '_pending_ocr_remove_settings', None)
+        
+        if remove_after and remove_settings:
+            # Remove sub from ORIGINAL video, then overlay new subtitles
+            print(f"🗑️ Xoá sub gốc trước khi overlay subtitle mới...")
+            # Set flag to overlay subtitles after removal completes
+            self._then_overlay_ocr = True
+            self.start_subtitle_removal(remove_settings, then_transcribe=False)
+        else:
+            # No removal needed - just add subtitles directly
+            self._apply_ocr_subtitles(segments)
+    
+    def _apply_ocr_subtitles(self, segments: list):
+        """Apply OCR extracted subtitles to timeline and player."""
+        if not segments:
+            return
+        
+        # Add subtitles to timeline
+        track = self.timeline_widget.main_track
+        if track.clips:
+            clip = track.clips[0]
+            self.timeline_widget.add_subtitle_track(segments, start_offset=clip.start_time)
+        
+        # Pass subtitles to Player
+        self._update_player_subtitles()
+        
+        QMessageBox.information(
+            self, 
+            "OCR Extract", 
+            f"✅ Đã trích xuất và overlay {len(segments)} đoạn subtitle!"
+        )
+    
+    def _on_ocr_error(self, error: str):
+        """Handle OCR extraction error."""
+        print(f"❌ OCR error: {error}")
+        QMessageBox.critical(self, "OCR Error", f"Lỗi khi trích xuất subtitle:\n{error}")
     
     def _on_transcription_progress(self, status: str):
         if self._progress_dialog:
@@ -564,10 +672,10 @@ class Timeline(QFrame):
             
             progress_callback(100)
             
-            # Handle callback (chain transcription if needed)
+            # Handle callback - always notify timeline that removal is complete
             timeline_ref = data.get("timeline_ref")
-            if timeline_ref and data.get("then_transcribe"):
-                # Update clip and chain transcription
+            if timeline_ref:
+                # Update clip and chain next action (transcription or OCR)
                 from PyQt6.QtCore import QMetaObject, Qt, Q_ARG
                 QMetaObject.invokeMethod(
                     timeline_ref, 
@@ -595,8 +703,21 @@ class Timeline(QFrame):
         # Load new video into player and media pool
         self._load_new_video_to_player_and_media(output_path)
         
+        # Check if we need to overlay OCR extracted subtitles
+        if getattr(self, '_then_overlay_ocr', False) and hasattr(self, '_ocr_segments'):
+            print(f"✅ Xoá subtitle thành công! Overlay subtitle OCR đã dịch...")
+            self._then_overlay_ocr = False
+            segments = self._ocr_segments
+            self._ocr_segments = None
+            self._apply_ocr_subtitles(segments)
+        # Check if OCR extraction was requested (legacy flow)
+        elif getattr(self, '_then_ocr', False) and hasattr(self, '_pending_ocr'):
+            translate_to = self._pending_ocr[0]
+            print(f"✅ Xoá subtitle thành công! Tiếp tục OCR extraction...")
+            self._then_ocr = False
+            self.start_ocr_extraction(translate_to)
         # Chain transcription if requested
-        if getattr(self, '_then_transcribe', False) and hasattr(self, '_pending_transcription'):
+        elif getattr(self, '_then_transcribe', False) and hasattr(self, '_pending_transcription'):
             language, translate_to = self._pending_transcription
             print(f"✅ Xoá subtitle thành công! Tiếp tục transcription...")
             self._then_transcribe = False
