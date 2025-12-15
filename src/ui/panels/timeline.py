@@ -484,13 +484,30 @@ class Timeline(QFrame):
         """Open TTS dialog with voice selection."""
         from src.ui.dialogs.ai_dialogs import TTSDialog
         
-        dialog = TTSDialog(self)
+        # Get subtitle text from timeline if available
+        subtitle_text = self._get_subtitle_text_from_timeline()
+        
+        dialog = TTSDialog(self, initial_text=subtitle_text)
         if dialog.exec():
             text = dialog.get_text()
             voice = dialog.get_voice()
             
             if text:
                 self.start_tts(text, voice)
+    
+    def _get_subtitle_text_from_timeline(self) -> str:
+        """Get all subtitle text from timeline's subtitle track."""
+        subtitle_texts = []
+        
+        for track in self.timeline_widget.tracks:
+            if track.name == "Subtitles":
+                for clip in track.clips:
+                    if hasattr(clip, 'text_content') and clip.text_content:
+                        subtitle_texts.append(clip.text_content)
+                    elif clip.name:
+                        subtitle_texts.append(clip.name)
+        
+        return "\n".join(subtitle_texts) if subtitle_texts else ""
     
     def start_tts(self, text: str, voice: str):
         """Start TTS generation using queue system (non-blocking)."""
@@ -578,6 +595,7 @@ class Timeline(QFrame):
         
         queue_manager.register_handler(TaskType.TRANSLATE, handle_tts)
     
+    @pyqtSlot()
     def _on_queue_tts_complete(self):
         """Called when queued TTS completes."""
         from src.core.timeline.clip import Clip

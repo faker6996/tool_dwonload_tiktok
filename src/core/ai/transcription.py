@@ -270,11 +270,13 @@ class TranscriptionService:
                 else:
                     final_text = original_text
                 
-                translated_segments.append({
-                    "start": seg["start"],
-                    "end": seg["end"],
-                    "text": final_text
-                })
+                # Only add segments with non-empty text
+                if final_text and final_text.strip():
+                    translated_segments.append({
+                        "start": seg["start"],
+                        "end": seg["end"],
+                        "text": final_text
+                    })
             
             # Show sample translations
             print(f"\n📝 Sample translations:")

@@ -297,12 +297,13 @@ class CaptionDialog(QDialog):
 class TTSDialog(QDialog):
     """Dialog for Text-to-Speech with voice selection."""
     
-    def __init__(self, parent=None):
+    def __init__(self, parent=None, initial_text: str = ""):
         super().__init__(parent)
         self.setWindowTitle("🎤 Text to Speech")
-        self.setFixedSize(500, 350)
+        self.setFixedSize(500, 400)
         self.result_text = None
         self.result_voice = None
+        self._initial_text = initial_text
         self.setup_ui()
     
     def setup_ui(self):
@@ -337,7 +338,12 @@ class TTSDialog(QDialog):
         
         self.text_edit = QTextEdit()
         self.text_edit.setPlaceholderText("Nhập văn bản cần chuyển thành giọng nói...")
-        self.text_edit.setMinimumHeight(120)
+        self.text_edit.setMinimumHeight(150)
+        
+        # Pre-fill with subtitle text if available
+        if self._initial_text:
+            self.text_edit.setText(self._initial_text)
+        
         text_layout.addWidget(self.text_edit)
         
         layout.addWidget(text_group)
