@@ -241,7 +241,11 @@ class TimelineWidget(QFrame):
     def add_subtitle_track(self, segments, start_offset=0.0):
         """
         Create a new track for subtitles and add clips.
+        Clears existing subtitle track first.
         """
+        # Remove existing subtitle tracks first
+        self.tracks = [t for t in self.tracks if t.name != "Subtitles"]
+        
         subtitle_track = Track("Subtitles")
         self.tracks.append(subtitle_track)
         
