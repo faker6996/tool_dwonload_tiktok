@@ -95,8 +95,9 @@ class Timeline(QFrame):
                 self.start_transcription(language, translate_to)
     
     def start_transcription(self, language=None, translate_to=None):
-        """Start transcription with progress dialog."""
-        from src.ui.dialogs.ai_progress import AIProgressDialog, TranscriptionWorker
+        """Start transcription via queue - non-blocking."""
+        from src.core.queue_manager import queue_manager, TaskType
+        import os
         
         print(f"[DEBUG] start_transcription called with language={language}, translate_to={translate_to}")
         
@@ -105,33 +106,42 @@ class Timeline(QFrame):
             return
             
         clip = track.clips[0]
+        video_path = clip.asset_id
         
         # Store for retry with fallback
         self._current_clip = clip
         self._current_translate_to = translate_to
         self._current_language = language
         
-        # No dialog - user wants to see progress in queue instead
-        # Just print to console for debugging
+        # Progress info
         if translate_to:
-            print(f"🌐 Starting transcription + translation to {translate_to.upper()}...")
+            title = f"Transcribe + Translate: {os.path.basename(video_path)}"
+            print(f"🌐 Starting transcription + translation to {translate_to.upper()} via queue...")
         else:
-            print(f"🎯 Starting transcription...")
+            title = f"Transcribe: {os.path.basename(video_path)}"
+            print(f"🎯 Starting transcription via queue...")
         
-        # Create worker thread
-        print(f"[DEBUG] Creating TranscriptionWorker with file={clip.asset_id}, translate_to={translate_to}")
-        self._transcription_worker = TranscriptionWorker(clip.asset_id, language, translate_to)
-        self._transcription_worker.progress.connect(self._on_transcription_progress)
-        self._transcription_worker.finished.connect(self._on_transcription_finished)
-        self._transcription_worker.error.connect(self._on_transcription_error)
-        self._transcription_worker.rate_limit.connect(self._on_rate_limit)
-        self._transcription_worker.start()
+        # Add task to queue
+        queue_manager.add_task(
+            TaskType.TRANSCRIBE,
+            title,
+            {
+                "video_path": video_path,
+                "language": language,
+                "translate_to": translate_to,
+                "timeline_ref": self,
+            }
+        )
+        
+        # Register transcription handler if not already
+        self._register_transcription_handler()
     
     def start_ocr_extraction(self, translate_to=None, remove_after=False):
-        """Start OCR subtitle extraction from video frames."""
-        from PyQt6.QtCore import QThread, pyqtSignal
+        """Start OCR subtitle extraction via queue - non-blocking."""
+        from src.core.queue_manager import queue_manager, TaskType
+        import os
         
-        print(f"👁️ Starting OCR subtitle extraction, translate_to={translate_to}, remove_after={remove_after}")
+        print(f"👁️ Starting OCR subtitle extraction via queue, translate_to={translate_to}, remove_after={remove_after}")
         
         track = self.timeline_widget.main_track
         if not track.clips:
@@ -144,63 +154,127 @@ class Timeline(QFrame):
         self._ocr_original_video = video_path
         self._ocr_remove_after = remove_after
         
-        # Create worker thread for OCR
-        class OCRWorker(QThread):
-            finished = pyqtSignal(list)
-            error = pyqtSignal(str)
-            progress = pyqtSignal(str)
-            
-            def __init__(self, video_path, translate_to):
-                super().__init__()
-                self.video_path = video_path
-                self.translate_to = translate_to
-            
-            def run(self):
-                try:
-                    from src.core.ai.ocr_subtitle import ocr_subtitle_extractor
-                    
-                    self.progress.emit("🔍 Đang quét video với OCR...")
-                    segments = ocr_subtitle_extractor.extract_subtitles(
-                        self.video_path,
-                        target_lang=self.translate_to or "vi",
-                        fps_sample=1.0,  # 1 frame per second
-                        translate=bool(self.translate_to)
-                    )
-                    self.finished.emit(segments)
-                except Exception as e:
-                    import traceback
-                    traceback.print_exc()
-                    self.error.emit(str(e))
+        # Add task to queue
+        queue_manager.add_task(
+            TaskType.OCR_EXTRACT,
+            f"OCR: {os.path.basename(video_path)}",
+            {
+                "video_path": video_path,
+                "translate_to": translate_to or "vi",
+                "remove_after": remove_after,
+                "timeline_ref": self,
+            }
+        )
         
-        self._ocr_worker = OCRWorker(video_path, translate_to)
-        self._ocr_worker.finished.connect(self._on_ocr_finished)
-        self._ocr_worker.error.connect(self._on_ocr_error)
-        self._ocr_worker.progress.connect(lambda msg: print(msg))
-        self._ocr_worker.start()
+        # Register OCR handler if not already
+        self._register_ocr_handler()
     
-    def _on_ocr_finished(self, segments: list):
-        """Handle OCR extraction completion."""
+    def _register_transcription_handler(self):
+        """Register transcription handler with queue manager."""
+        from src.core.queue_manager import queue_manager, TaskType
+        
+        if getattr(self, '_transcription_handler_registered', False):
+            return
+        self._transcription_handler_registered = True
+        
+        def handle_transcription(data, progress_callback):
+            from src.core.ai.transcription import transcription_service
+            
+            video_path = data["video_path"]
+            language = data.get("language")
+            translate_to = data.get("translate_to")
+            timeline_ref = data.get("timeline_ref")
+            
+            progress_callback(10)
+            
+            # Run transcription
+            segments = transcription_service.transcribe(
+                video_path,
+                source_language=language,
+                translate_to=translate_to
+            )
+            
+            progress_callback(90)
+            
+            # Callback to timeline
+            if timeline_ref:
+                from PyQt6.QtCore import QMetaObject, Qt
+                # Store segments in timeline for callback
+                timeline_ref._transcription_segments = segments
+                QMetaObject.invokeMethod(
+                    timeline_ref,
+                    "_on_queue_transcription_complete",
+                    Qt.ConnectionType.QueuedConnection
+                )
+            
+            progress_callback(100)
+        
+        queue_manager.register_handler(TaskType.TRANSCRIBE, handle_transcription)
+    
+    def _register_ocr_handler(self):
+        """Register OCR handler with queue manager."""
+        from src.core.queue_manager import queue_manager, TaskType
+        
+        if getattr(self, '_ocr_handler_registered', False):
+            return
+        self._ocr_handler_registered = True
+        
+        def handle_ocr_extract(data, progress_callback):
+            from src.core.ai.ocr_subtitle import ocr_subtitle_extractor
+            
+            video_path = data["video_path"]
+            translate_to = data["translate_to"]
+            remove_after = data["remove_after"]
+            timeline_ref = data.get("timeline_ref")
+            
+            progress_callback(10)
+            
+            # Run OCR extraction
+            segments = ocr_subtitle_extractor.extract_subtitles(
+                video_path,
+                target_lang=translate_to,
+                fps_sample=1.0,
+                translate=True
+            )
+            
+            progress_callback(80)
+            
+            # Callback to timeline
+            if timeline_ref:
+                from PyQt6.QtCore import QMetaObject, Qt, Q_ARG
+                # Store segments in timeline for callback
+                timeline_ref._ocr_segments = segments
+                timeline_ref._ocr_remove_after = remove_after
+                QMetaObject.invokeMethod(
+                    timeline_ref,
+                    "_on_queue_ocr_complete",
+                    Qt.ConnectionType.QueuedConnection
+                )
+            
+            progress_callback(100)
+        
+        queue_manager.register_handler(TaskType.OCR_EXTRACT, handle_ocr_extract)
+    
+    @pyqtSlot()
+    def _on_queue_ocr_complete(self):
+        """Called when queue OCR extraction completes."""
+        segments = getattr(self, '_ocr_segments', [])
+        remove_after = getattr(self, '_ocr_remove_after', False)
+        remove_settings = getattr(self, '_pending_ocr_remove_settings', None)
+        
         print(f"✅ OCR extraction complete! Found {len(segments)} subtitle segments.")
         
         if not segments:
             QMessageBox.warning(self, "OCR Extract", "Không tìm thấy text trong video.")
             return
         
-        # Store OCR segments for later (after sub removal)
-        self._ocr_segments = segments
-        
-        # Check if we need to remove sub first
-        remove_after = getattr(self, '_ocr_remove_after', False)
-        remove_settings = getattr(self, '_pending_ocr_remove_settings', None)
-        
         if remove_after and remove_settings:
             # Remove sub from ORIGINAL video, then overlay new subtitles
             print(f"🗑️ Xoá sub gốc trước khi overlay subtitle mới...")
-            # Set flag to overlay subtitles after removal completes
             self._then_overlay_ocr = True
             self.start_subtitle_removal(remove_settings, then_transcribe=False)
         else:
-            # No removal needed - just add subtitles directly
+            # No removal needed - overlay on original video
             self._apply_ocr_subtitles(segments)
     
     def _apply_ocr_subtitles(self, segments: list):
@@ -227,6 +301,39 @@ class Timeline(QFrame):
         """Handle OCR extraction error."""
         print(f"❌ OCR error: {error}")
         QMessageBox.critical(self, "OCR Error", f"Lỗi khi trích xuất subtitle:\n{error}")
+    
+    @pyqtSlot()
+    def _on_queue_transcription_complete(self):
+        """Called when queue transcription completes."""
+        segments = getattr(self, '_transcription_segments', [])
+        
+        print(f"✅ Transcription complete! Found {len(segments)} subtitle segments.")
+        
+        if segments:
+            track = self.timeline_widget.main_track
+            if track.clips:
+                clip = track.clips[0]
+                self.timeline_widget.add_subtitle_track(segments, start_offset=clip.start_time)
+            
+            # Pass subtitles to Player for live display
+            self._update_player_subtitles()
+            
+            # Check if we came from remove sub flow - load new video
+            new_video_path = getattr(self, '_sub_removal_output', None)
+            if new_video_path and os.path.exists(new_video_path):
+                self._load_new_video_to_player_and_media(new_video_path)
+                self._sub_removal_output = None  # Clear for next time
+            
+            # Show success message
+            QMessageBox.information(
+                self, 
+                "Auto Caption", 
+                f"✅ Đã tạo {len(segments)} đoạn subtitle!\n\n"
+                f"📍 Subtitles sẽ hiển thị trên video khi play\n"
+                f"💡 Click vào đoạn subtitle để xem nội dung trong Inspector"
+            )
+        else:
+            QMessageBox.warning(self, "Auto Caption", "Không tìm thấy lời nói trong video.")
     
     def _on_transcription_progress(self, status: str):
         if self._progress_dialog:

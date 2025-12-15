@@ -16,6 +16,8 @@ class TaskType(Enum):
     REMOVE_SUB = "remove_sub"
     EXPORT = "export"
     TRANSCODE = "transcode"
+    OCR_EXTRACT = "ocr_extract"
+    TRANSCRIBE = "transcribe"
 
 
 class TaskStatus(Enum):
