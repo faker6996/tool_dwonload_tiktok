@@ -103,7 +103,7 @@ class SubtitleRemoverService:
         }
         return self._gpu_encoder
     
-    def detect_subtitle_region_easyocr(self, video_path: str, num_samples: int = 3) -> Optional[Tuple[int, int, int, int]]:
+    def detect_subtitle_region_easyocr(self, video_path: str, num_samples: int = 10) -> Optional[Tuple[int, int, int, int]]:
         """
         Detect subtitle region using EasyOCR for accurate text detection.
         
@@ -316,7 +316,7 @@ class SubtitleRemoverService:
         detected_region = None
         if method in ["blur", "black"]:
             print("🔍 Detecting subtitle position with EasyOCR...")
-            detected_region = self.detect_subtitle_region_easyocr(input_path, num_samples=3)
+            detected_region = self.detect_subtitle_region_easyocr(input_path, num_samples=10)
         
         if detected_region:
             # Use detected region

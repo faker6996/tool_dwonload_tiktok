@@ -267,8 +267,8 @@ class Timeline(QFrame):
                 self.start_tts(text, voice)
     
     def start_tts(self, text: str, voice: str):
-        """Start TTS generation with progress dialog."""
-        from src.ui.dialogs.ai_progress import AIProgressDialog, TTSWorker
+        """Start TTS generation using queue system (non-blocking)."""
+        from src.core.queue_manager import queue_manager, TaskType
         import os
         import tempfile
         import time
@@ -277,22 +277,125 @@ class Timeline(QFrame):
         temp_dir = tempfile.gettempdir()
         output_path = os.path.join(temp_dir, f"tts_{int(time.time())}.mp3")
         
-        # Show progress dialog
-        self._progress_dialog = AIProgressDialog(
-            self, 
-            title="🎤 Text to Speech",
-            message="Đang tạo giọng nói..."
+        # Register handler if not already done
+        if not hasattr(self, '_tts_handler_registered'):
+            self._register_tts_handler()
+            self._tts_handler_registered = True
+        
+        # Add task to queue (non-blocking!)
+        queue_manager.add_task(
+            TaskType.TRANSLATE,  # Reuse TRANSLATE type for TTS
+            f"TTS: {text[:30]}..." if len(text) > 30 else f"TTS: {text}",
+            {
+                "text": text,
+                "voice": voice,
+                "output_path": output_path,
+                "timeline_ref": self
+            }
         )
-        self._progress_dialog.set_status(f"🔊 Voice: {voice}")
         
-        # Create worker thread
-        self._tts_worker = TTSWorker(text, output_path, voice)
-        self._tts_worker.progress.connect(self._on_tts_progress)
-        self._tts_worker.finished.connect(lambda path, dur: self._on_tts_finished(path, dur, text))
-        self._tts_worker.error.connect(self._on_tts_error)
-        self._tts_worker.start()
+        # Show info message (non-blocking)
+        from PyQt6.QtWidgets import QMessageBox
+        QMessageBox.information(
+            self, 
+            "Queue", 
+            f"✅ Đã thêm vào queue!\n\n"
+            f"📋 Task: Text to Speech\n"
+            f"🔊 Voice: {voice}\n\n"
+            f"💡 Theo dõi tiến trình trong Queue panel (nút 📋 trên header)"
+        )
+    
+    def _register_tts_handler(self):
+        """Register TTS handler with queue manager."""
+        from src.core.queue_manager import queue_manager, TaskType
         
-        self._progress_dialog.exec()
+        def handle_tts(data: dict, progress_callback):
+            from src.core.ai.tts import tts_service
+            
+            text = data["text"]
+            voice = data["voice"]
+            output_path = data["output_path"]
+            
+            progress_callback(20)
+            
+            # Generate TTS
+            tts_service.generate_speech(text, output_path, voice=voice)
+            
+            progress_callback(80)
+            
+            # Get duration
+            try:
+                from mutagen.mp3 import MP3
+                audio = MP3(output_path)
+                duration = audio.info.length
+            except:
+                words = len(text.split())
+                duration = max(1.0, words * 0.4)
+            
+            progress_callback(100)
+            
+            # Callback to add clip to timeline
+            timeline_ref = data.get("timeline_ref")
+            if timeline_ref:
+                from PyQt6.QtCore import QMetaObject, Qt, Q_ARG
+                # Store data for callback
+                timeline_ref._tts_result = {
+                    "output_path": output_path,
+                    "duration": duration,
+                    "text": text
+                }
+                QMetaObject.invokeMethod(
+                    timeline_ref, 
+                    "_on_queue_tts_complete",
+                    Qt.ConnectionType.QueuedConnection
+                )
+        
+        queue_manager.register_handler(TaskType.TRANSLATE, handle_tts)
+    
+    def _on_queue_tts_complete(self):
+        """Called when queued TTS completes."""
+        from src.core.timeline.clip import Clip
+        from src.core.timeline.track import Track
+        
+        result = getattr(self, '_tts_result', None)
+        if not result:
+            return
+        
+        output_path = result["output_path"]
+        duration = result["duration"]
+        text = result["text"]
+        
+        # Find or create AI Voiceover track
+        audio_track = None
+        for track in self.timeline_widget.tracks:
+            if track.name == "AI Voiceover":
+                audio_track = track
+                break
+        
+        if not audio_track:
+            audio_track = Track("AI Voiceover", is_audio=True)
+            self.timeline_widget.tracks.append(audio_track)
+        
+        # Create Clip
+        clip = Clip(
+            asset_id=output_path,
+            name=f"🎤 {text[:20]}..." if len(text) > 20 else f"🎤 {text}",
+            duration=duration,
+            waveform_path=None
+        )
+        audio_track.clips.append(clip)
+        
+        self.timeline_widget.refresh_tracks()
+        
+        # Show success message
+        from PyQt6.QtWidgets import QMessageBox
+        QMessageBox.information(
+            self, 
+            "Text to Speech", 
+            f"✅ Đã tạo audio thành công!\n\n"
+            f"⏱ Duration: {duration:.1f} giây\n"
+            f"📍 Xem kết quả: Track 'AI Voiceover' trong Timeline"
+        )
     
     def _on_tts_progress(self, status: str):
         if self._progress_dialog:
@@ -368,11 +471,9 @@ class Timeline(QFrame):
                 self.start_subtitle_removal(settings)
     
     def start_subtitle_removal(self, settings: dict, then_transcribe: bool = False):
-        """Start subtitle removal with progress dialog."""
-        from src.ui.dialogs.ai_progress import AIProgressDialog
-        from PyQt6.QtCore import QThread, pyqtSignal
+        """Start subtitle removal using queue system (non-blocking)."""
+        from src.core.queue_manager import queue_manager, TaskType
         import os
-        import time
         
         track = self.timeline_widget.main_track
         if not track.clips:
@@ -386,72 +487,114 @@ class Timeline(QFrame):
         output_dir = os.path.dirname(input_path)
         output_path = os.path.join(output_dir, f"{base_name}_no_sub.mp4")
         
-        # Store for use in callbacks
+        # Store for callback
         self._sub_removal_output = output_path
-        self._sub_removal_settings = settings
-        self._then_transcribe = then_transcribe  # Chain transcription after removal
+        self._then_transcribe = then_transcribe
+        if then_transcribe and hasattr(self, '_pending_transcription'):
+            pass  # Keep pending transcription
         
-        # Show progress dialog
-        self._progress_dialog = AIProgressDialog(
-            self, 
-            title="🗑️ Removing Subtitles",
-            message="Đang xoá subtitle từ video..."
+        # Register handler if not already done
+        if not hasattr(self, '_sub_handler_registered'):
+            self._register_subtitle_removal_handler()
+            self._sub_handler_registered = True
+        
+        # Add task to queue (non-blocking!)
+        task = queue_manager.add_task(
+            TaskType.REMOVE_SUB,
+            f"Remove sub: {os.path.basename(input_path)}",
+            {
+                "input_path": input_path,
+                "output_path": output_path,
+                "settings": settings,
+                "then_transcribe": then_transcribe,
+                "timeline_ref": self  # Reference for callback
+            }
         )
-        self._progress_dialog.set_status("⏳ Đang xử lý...")
         
-        # Create worker thread
-        class SubtitleRemovalWorker(QThread):
-            progress = pyqtSignal(str)
-            finished = pyqtSignal(str)  # output path
-            error = pyqtSignal(str)
+        # Show info message (non-blocking)
+        from PyQt6.QtWidgets import QMessageBox
+        QMessageBox.information(
+            self, 
+            "Queue", 
+            f"✅ Đã thêm vào queue!\n\n"
+            f"📋 Task: Remove Subtitles\n"
+            f"📁 File: {os.path.basename(input_path)}\n\n"
+            f"💡 Theo dõi tiến trình trong Queue panel (nút 📋 trên header)"
+        )
+    
+    def _register_subtitle_removal_handler(self):
+        """Register subtitle removal handler with queue manager."""
+        from src.core.queue_manager import queue_manager, TaskType
+        
+        def handle_remove_sub(data: dict, progress_callback):
+            from src.core.ai.subtitle_remover import subtitle_remover_service
             
-            def __init__(self, input_path, output_path, settings):
-                super().__init__()
-                self.input_path = input_path
-                self.output_path = output_path
-                self.settings = settings
+            input_path = data["input_path"]
+            output_path = data["output_path"]
+            settings = data["settings"]
             
-            def run(self):
-                try:
-                    from src.core.ai.subtitle_remover import subtitle_remover_service
-                    
-                    algorithm = self.settings.get("algorithm", "blur")
-                    bottom_percent = self.settings.get("bottom_percent", 0.15)
-                    
-                    if algorithm == "inpaint":
-                        # Use slow but high-quality OpenCV inpaint
-                        self.progress.emit("🐢 AI Inpainting (sẽ mất 30+ phút)...")
-                        success = subtitle_remover_service.process_video(
-                            self.input_path,
-                            self.output_path,
-                            progress_callback=lambda c, t: self.progress.emit(f"⏳ Frame {c}/{t}"),
-                            region=None  # Auto-detect
-                        )
-                    else:
-                        # Use fast FFmpeg methods
-                        self.progress.emit(f"🚀 Processing with FFmpeg ({algorithm})...")
-                        success = subtitle_remover_service.remove_subtitles_ffmpeg(
-                            self.input_path,
-                            self.output_path,
-                            bottom_percent=bottom_percent,
-                            method=algorithm  # blur, black, or crop
-                        )
-                    
-                    if success:
-                        self.finished.emit(self.output_path)
-                    else:
-                        self.error.emit("Failed to process video")
-                        
-                except Exception as e:
-                    self.error.emit(str(e))
+            algorithm = settings.get("algorithm", "blur")
+            bottom_percent = settings.get("bottom_percent", 0.15)
+            
+            progress_callback(10)
+            
+            if algorithm == "inpaint":
+                progress_callback(20)
+                success = subtitle_remover_service.process_video(
+                    input_path, output_path,
+                    progress_callback=lambda c, t: progress_callback(20 + int(c/t * 70)),
+                    region=None
+                )
+            else:
+                progress_callback(30)
+                success = subtitle_remover_service.remove_subtitles_ffmpeg(
+                    input_path, output_path,
+                    bottom_percent=bottom_percent,
+                    method=algorithm
+                )
+            
+            if not success:
+                raise Exception("Failed to process video")
+            
+            progress_callback(100)
+            
+            # Handle callback (chain transcription if needed)
+            timeline_ref = data.get("timeline_ref")
+            if timeline_ref and data.get("then_transcribe"):
+                # Update clip and chain transcription
+                from PyQt6.QtCore import QMetaObject, Qt, Q_ARG
+                QMetaObject.invokeMethod(
+                    timeline_ref, 
+                    "_on_queue_sub_removal_complete",
+                    Qt.ConnectionType.QueuedConnection,
+                    Q_ARG(str, output_path)
+                )
         
-        self._sub_removal_worker = SubtitleRemovalWorker(input_path, output_path, settings)
-        self._sub_removal_worker.progress.connect(self._on_sub_removal_progress)
-        self._sub_removal_worker.finished.connect(self._on_sub_removal_finished)
-        self._sub_removal_worker.error.connect(self._on_sub_removal_error)
-        self._sub_removal_worker.start()
+        queue_manager.register_handler(TaskType.REMOVE_SUB, handle_remove_sub)
+    
+    def _on_queue_sub_removal_complete(self, output_path: str):
+        """Called when queued subtitle removal completes."""
+        import os
         
-        self._progress_dialog.exec()
+        # Update clip to use new video
+        track = self.timeline_widget.main_track
+        if track.clips:
+            track.clips[0].asset_id = output_path
+        
+        # Chain transcription if requested
+        if getattr(self, '_then_transcribe', False) and hasattr(self, '_pending_transcription'):
+            language, translate_to = self._pending_transcription
+            print(f"✅ Xoá subtitle thành công! Tiếp tục transcription...")
+            self._then_transcribe = False
+            self.start_transcription(language, translate_to)
+        else:
+            from PyQt6.QtWidgets import QMessageBox
+            QMessageBox.information(
+                self,
+                "Remove Subtitles",
+                f"✅ Đã xoá subtitle thành công!\n\n"
+                f"📁 File mới: {os.path.basename(output_path)}"
+            )
     
     def _on_sub_removal_progress(self, status: str):
         if self._progress_dialog:

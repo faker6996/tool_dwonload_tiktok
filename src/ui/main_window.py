@@ -43,6 +43,42 @@ class MainWindow(QMainWindow):
         
         top_bar_layout.addStretch()
         
+        # Queue Button (shows popup panel)
+        self.queue_btn = QPushButton("📋")
+        self.queue_btn.setFixedSize(36, 36)
+        self.queue_btn.setToolTip("Task Queue")
+        self.queue_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.queue_btn.setStyleSheet("""
+            QPushButton {
+                background: #27272a;
+                border-radius: 8px;
+                font-size: 16px;
+            }
+            QPushButton:hover {
+                background: #3f3f46;
+            }
+        """)
+        self.queue_btn.clicked.connect(self._toggle_queue_panel)
+        top_bar_layout.addWidget(self.queue_btn)
+        
+        # Queue stats label
+        self.queue_stats = QLabel("0")
+        self.queue_stats.setStyleSheet("""
+            background: #ef4444;
+            color: white;
+            font-size: 10px;
+            font-weight: bold;
+            padding: 2px 6px;
+            border-radius: 8px;
+            min-width: 16px;
+        """)
+        self.queue_stats.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.queue_stats.hide()  # Hidden when 0 tasks
+        top_bar_layout.addWidget(self.queue_stats)
+        
+        # Spacer
+        top_bar_layout.addSpacing(8)
+        
         # Export Button
         self.export_btn = QPushButton("Export Video")
         self.export_btn.setObjectName("primary")
@@ -185,9 +221,57 @@ class MainWindow(QMainWindow):
     def on_export_clicked(self):
         if hasattr(self.edit_page, 'open_export_dialog'):
             self.edit_page.open_export_dialog()
+    
+    def _setup_queue_manager(self):
+        """Setup queue manager and panel."""
+        from src.core.queue_manager import queue_manager
+        from src.ui.panels.queue_panel import QueuePanel
+        
+        self.queue_manager = queue_manager
+        
+        # Create queue panel (popup)
+        self.queue_panel = QueuePanel(queue_manager)
+        self.queue_panel.setParent(self)
+        self.queue_panel.setWindowFlags(Qt.WindowType.Popup | Qt.WindowType.FramelessWindowHint)
+        self.queue_panel.setFixedSize(360, 400)
+        self.queue_panel.hide()
+        
+        # Connect to update badge
+        queue_manager.task_added.connect(self._update_queue_badge)
+        queue_manager.task_updated.connect(self._update_queue_badge)
+        queue_manager.task_removed.connect(lambda _: self._update_queue_badge())
+        queue_manager.queue_cleared.connect(self._update_queue_badge)
+    
+    def _toggle_queue_panel(self):
+        """Show/hide the queue panel popup."""
+        if not hasattr(self, 'queue_panel'):
+            self._setup_queue_manager()
+        
+        if self.queue_panel.isVisible():
+            self.queue_panel.hide()
+        else:
+            # Position below the queue button
+            btn_pos = self.queue_btn.mapToGlobal(self.queue_btn.rect().bottomLeft())
+            self.queue_panel.move(btn_pos.x() - 280, btn_pos.y() + 5)
+            self.queue_panel.show()
+    
+    def _update_queue_badge(self, *args):
+        """Update the queue badge with current task count."""
+        if not hasattr(self, 'queue_manager'):
+            return
+        
+        stats = self.queue_manager.get_stats()
+        active = stats['pending'] + stats['running']
+        
+        if active > 0:
+            self.queue_stats.setText(str(active))
+            self.queue_stats.show()
+        else:
+            self.queue_stats.hide()
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)
     window = MainWindow()
     window.show()
     sys.exit(app.exec())
+
