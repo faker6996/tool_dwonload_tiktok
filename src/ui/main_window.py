@@ -177,11 +177,10 @@ class MainWindow(QMainWindow):
             self.title_label.setText("Universal Video Downloader")
 
     def open_settings(self):
-        # Placeholder for Settings Dialog
-        # from src.ui.dialogs.settings_dialog import SettingsDialog
-        # dialog = SettingsDialog(self)
-        # dialog.exec()
-        pass
+        """Open settings dialog."""
+        from src.ui.dialogs.settings_dialog import SettingsDialog
+        dialog = SettingsDialog(self)
+        dialog.exec()
 
     def on_export_clicked(self):
         if hasattr(self.edit_page, 'open_export_dialog'):

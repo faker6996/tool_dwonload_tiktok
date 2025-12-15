@@ -12,6 +12,9 @@ ffmpeg-python
 openai-whisper
 edge-tts
 deep-translator
+google-generativeai  # Gemini Pro translation
+openai  # OpenAI GPT-5/GPT-5 mini translation
+opencv-python  # AI subtitle removal (inpainting)
 mlx-whisper  # Optional: Fast transcription on Apple Silicon (M1/M2/M3)
 
 # TikTok/Douyin Download

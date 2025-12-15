@@ -10,10 +10,12 @@ class CaptionDialog(QDialog):
     
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.setWindowTitle("🎯 Auto Caption Settings")
-        self.setFixedSize(500, 400)
+        self.setWindowTitle("📝 Auto Sub Settings")
+        self.setFixedSize(500, 480)  # Larger for more options
         self.result_language = None
         self.result_translate_to = None
+        self.result_mode = "transcribe"  # transcribe, translate, or remove
+        self.result_remove_settings = None
         self.setup_ui()
     
     def setup_ui(self):
@@ -26,8 +28,9 @@ class CaptionDialog(QDialog):
         
         self.mode_combo = QComboBox()
         self.mode_combo.addItems([
-            "📝 Transcribe (Giữ nguyên ngôn ngữ gốc)",
-            "🌐 Translate (Dịch sang ngôn ngữ khác)",
+            "📝 Transcribe (Tạo sub từ audio)",
+            "🌐 Translate (Dịch sub sang ngôn ngữ khác)",
+            "🗑️ Remove Sub (Xoá sub gốc trong video)",
         ])
         self.mode_combo.currentIndexChanged.connect(self.on_mode_changed)
         mode_layout.addWidget(self.mode_combo)
@@ -86,7 +89,9 @@ class CaptionDialog(QDialog):
         self.provider_combo = QComboBox()
         self.provider_combo.addItems([
             "Google Translate (Miễn phí)",
-            "Gemini Pro (Chất lượng cao)",
+            "Gemini Pro",
+            "GPT-5 (Chất lượng cao)",
+            "GPT-5 mini (Rẻ nhất 🔥)",
         ])
         self.provider_combo.currentIndexChanged.connect(self.on_provider_changed)
         self.provider_combo.setMinimumWidth(200)
@@ -108,6 +113,43 @@ class CaptionDialog(QDialog):
         
         self.provider_group.hide()  # Hidden by default
         layout.addWidget(self.provider_group)
+        
+        # Remove Sub Settings Group (hidden by default)
+        self.remove_group = QGroupBox("🗑️ Cài đặt xoá subtitle")
+        remove_layout = QVBoxLayout(self.remove_group)
+        
+        # Algorithm selection
+        algo_row = QHBoxLayout()
+        algo_row.addWidget(QLabel("Phương pháp:"))
+        self.remove_algo_combo = QComboBox()
+        self.remove_algo_combo.addItems([
+            "🌫️ Blur (Nhanh ⚡)",
+            "⬛ Black (Nhanh ⚡)",
+            "✂️ Crop (Nhanh ⚡)",
+            "🎨 AI Inpaint (Chậm 🐢)",
+        ])
+        algo_row.addWidget(self.remove_algo_combo)
+        algo_row.addStretch()
+        remove_layout.addLayout(algo_row)
+        
+        # Height slider
+        height_row = QHBoxLayout()
+        height_row.addWidget(QLabel("Vùng sub (%):"))
+        from PyQt6.QtWidgets import QSlider
+        self.remove_height_slider = QSlider(Qt.Orientation.Horizontal)
+        self.remove_height_slider.setMinimum(5)
+        self.remove_height_slider.setMaximum(40)
+        self.remove_height_slider.setValue(15)
+        self.remove_height_slider.valueChanged.connect(
+            lambda v: self.remove_height_label.setText(f"{v}%")
+        )
+        height_row.addWidget(self.remove_height_slider)
+        self.remove_height_label = QLabel("15%")
+        height_row.addWidget(self.remove_height_label)
+        remove_layout.addLayout(height_row)
+        
+        self.remove_group.hide()  # Hidden by default
+        layout.addWidget(self.remove_group)
         
         # Info label
         self.info_label = QLabel("💡 Whisper AI sẽ transcribe audio thành text và tạo subtitles trên timeline.")
@@ -137,31 +179,53 @@ class CaptionDialog(QDialog):
             self.source_group.show()
             self.target_group.hide()
             self.provider_group.hide()
+            self.remove_group.hide()
             self.info_label.setText("💡 Whisper AI sẽ transcribe audio thành text và tạo subtitles trên timeline.")
-        else:  # Translate mode
+            self.info_label.setStyleSheet("color: #a1a1aa; font-size: 11px;")
+        elif index == 1:  # Translate mode
             self.source_group.hide()
             self.target_group.show()
             self.provider_group.show()
+            self.remove_group.hide()
             self.info_label.setText("💡 Whisper AI sẽ transcribe audio rồi dịch sang ngôn ngữ đã chọn.")
+            self.info_label.setStyleSheet("color: #a1a1aa; font-size: 11px;")
+        else:  # Remove Sub mode
+            self.source_group.hide()
+            self.target_group.hide()
+            self.provider_group.hide()
+            self.remove_group.show()
+            self.info_label.setText("⚠️ Xoá subtitle gốc được ghi cứng trong video. Video mới sẽ được tạo.")
+            self.info_label.setStyleSheet("color: #f59e0b; font-size: 11px;")
     
     def on_provider_changed(self, index):
-        if index == 1:  # Gemini Pro
+        # Show API key input for providers that need it (Gemini, GPT-5, GPT-5 mini)
+        if index >= 1:  # Not Google Translate
             self.api_key_input.show()
-        else:  # Google Translate
+            if index == 1:
+                self.api_key_input.setPlaceholderText("Nhập Gemini API Key...")
+            else:
+                self.api_key_input.setPlaceholderText("Nhập OpenAI API Key...")
+        else:
             self.api_key_input.hide()
     
     def accept_with_settings(self):
-        # Configure translation provider
-        if self.mode_combo.currentIndex() == 1:  # Translate mode
+        mode_index = self.mode_combo.currentIndex()
+        
+        # Configure translation provider for translate mode
+        if mode_index == 1:  # Translate mode
             from src.core.ai.translation import translation_service
             
-            if self.provider_combo.currentIndex() == 0:
-                translation_service.set_provider("google")
-            else:
-                translation_service.set_provider("gemini")
-                api_key = self.api_key_input.text().strip()
-                if api_key:
+            provider_map = {0: "google", 1: "gemini", 2: "gpt5", 3: "gpt5_mini"}
+            provider = provider_map.get(self.provider_combo.currentIndex(), "google")
+            translation_service.set_provider(provider)
+            
+            # Set API key if provided
+            api_key = self.api_key_input.text().strip()
+            if api_key:
+                if provider == "gemini":
                     translation_service.set_gemini_api_key(api_key)
+                elif provider in ["gpt5", "gpt5_mini"]:
+                    translation_service.set_openai_api_key(api_key)
         
         # Map combo selection to language code
         source_lang_map = {
@@ -171,20 +235,35 @@ class CaptionDialog(QDialog):
             0: "vi", 1: "en", 2: "zh", 3: "ja", 4: "ko", 5: "fr", 6: "de", 7: "es",
         }
         
-        if self.mode_combo.currentIndex() == 0:  # Transcribe
+        if mode_index == 0:  # Transcribe
+            self.result_mode = "transcribe"
             self.result_language = source_lang_map.get(self.source_lang_combo.currentIndex())
             self.result_translate_to = None
-        else:  # Translate
+        elif mode_index == 1:  # Translate
+            self.result_mode = "translate"
             self.result_language = None
             self.result_translate_to = target_lang_map.get(self.target_lang_combo.currentIndex())
+        else:  # Remove Sub
+            self.result_mode = "remove"
+            algo_map = {0: "blur", 1: "black", 2: "crop", 3: "inpaint"}
+            self.result_remove_settings = {
+                "algorithm": algo_map.get(self.remove_algo_combo.currentIndex(), "blur"),
+                "bottom_percent": self.remove_height_slider.value() / 100.0,
+            }
         
         self.accept()
+    
+    def get_mode(self):
+        return self.result_mode
     
     def get_language(self):
         return self.result_language
     
     def get_translate_to(self):
         return self.result_translate_to
+    
+    def get_remove_settings(self):
+        return self.result_remove_settings
 
 
 class TTSDialog(QDialog):

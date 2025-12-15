@@ -162,16 +162,137 @@ Keep the same numbering format. Only return translations, no explanations.
             return texts  # Return originals instead of calling individual translations
 
 
+class OpenAIProvider(TranslationProvider):
+    """OpenAI GPT-5/GPT-5 mini translation provider."""
+    
+    def __init__(self, api_key: str = None, model: str = "gpt-5"):
+        self.api_key = api_key or os.environ.get("OPENAI_API_KEY", "")
+        self.model = model
+        self._client = None
+    
+    def get_name(self) -> str:
+        model_names = {
+            "gpt-5": "GPT-5",
+            "gpt-5-mini": "GPT-5 mini",
+            "gpt-4o": "GPT-4o",
+        }
+        return model_names.get(self.model, self.model)
+    
+    def set_api_key(self, api_key: str):
+        self.api_key = api_key
+        self._client = None  # Reset client
+    
+    def _get_client(self):
+        if self._client is None:
+            from openai import OpenAI
+            self._client = OpenAI(api_key=self.api_key)
+        return self._client
+    
+    def translate(self, text: str, target_lang: str, source_lang: str = "auto") -> str:
+        if not text or not text.strip():
+            return text
+        
+        if not self.api_key:
+            print("⚠️ OpenAI API key not set. Using Google Translate fallback.")
+            return GoogleTranslateProvider().translate(text, target_lang, source_lang)
+        
+        try:
+            client = self._get_client()
+            lang_names = {
+                "vi": "Vietnamese", "en": "English", "zh": "Chinese",
+                "ja": "Japanese", "ko": "Korean",
+            }
+            target_name = lang_names.get(target_lang, target_lang)
+            
+            response = client.chat.completions.create(
+                model=self.model,
+                messages=[
+                    {"role": "system", "content": f"Translate to {target_name}. Return only the translation."},
+                    {"role": "user", "content": text}
+                ],
+                temperature=0.3
+            )
+            return response.choices[0].message.content.strip() or text
+            
+        except Exception as e:
+            error_str = str(e)
+            if "429" in error_str or "rate" in error_str.lower():
+                raise RateLimitError(self.get_name(), error_str)
+            print(f"⚠️ OpenAI error: {e}")
+            return GoogleTranslateProvider().translate(text, target_lang, source_lang)
+    
+    def translate_batch(self, texts: list, target_lang: str, source_lang: str = "auto") -> list:
+        """Translate multiple texts using OpenAI - batch in single prompt."""
+        if not texts:
+            return []
+        
+        if not self.api_key:
+            return [GoogleTranslateProvider().translate(t, target_lang, source_lang) for t in texts]
+        
+        try:
+            client = self._get_client()
+            lang_names = {
+                "vi": "Vietnamese", "en": "English", "zh": "Chinese",
+                "ja": "Japanese", "ko": "Korean",
+            }
+            target_name = lang_names.get(target_lang, target_lang)
+            
+            # Format texts with numbers
+            numbered_texts = "\n".join([f"{i+1}. {t}" for i, t in enumerate(texts)])
+            
+            response = client.chat.completions.create(
+                model=self.model,
+                messages=[
+                    {"role": "system", "content": f"Translate each numbered line to {target_name}. Keep numbering. Return only translations."},
+                    {"role": "user", "content": numbered_texts}
+                ],
+                temperature=0.3
+            )
+            
+            result_text = response.choices[0].message.content.strip()
+            
+            # Parse numbered results
+            import re
+            lines = result_text.split("\n")
+            results = []
+            for line in lines:
+                line = line.strip()
+                if not line:
+                    continue
+                cleaned = re.sub(r'^\d+[\.\)]\s*', '', line)
+                if cleaned:
+                    results.append(cleaned)
+            
+            # Pad with originals if needed
+            while len(results) < len(texts):
+                results.append(texts[len(results)])
+            
+            return results[:len(texts)]
+            
+        except RateLimitError:
+            raise
+        except Exception as e:
+            error_str = str(e)
+            if "429" in error_str or "rate" in error_str.lower():
+                raise RateLimitError(self.get_name(), error_str)
+            print(f"⚠️ OpenAI batch error: {e}")
+            return texts
+
+
 class TranslationService:
     """Translation service with configurable provider."""
     
     PROVIDER_GOOGLE = "google"
     PROVIDER_GEMINI = "gemini"
+    PROVIDER_GPT5 = "gpt5"
+    PROVIDER_GPT5_MINI = "gpt5_mini"
     
     def __init__(self):
         self.providers = {
             self.PROVIDER_GOOGLE: GoogleTranslateProvider(),
             self.PROVIDER_GEMINI: GeminiProProvider(),
+            self.PROVIDER_GPT5: OpenAIProvider(model="gpt-5"),
+            self.PROVIDER_GPT5_MINI: OpenAIProvider(model="gpt-5-mini"),
         }
         self.current_provider = self.PROVIDER_GOOGLE
     
@@ -189,6 +310,12 @@ class TranslationService:
         """Set Gemini API key."""
         if isinstance(self.providers[self.PROVIDER_GEMINI], GeminiProProvider):
             self.providers[self.PROVIDER_GEMINI].set_api_key(api_key)
+    
+    def set_openai_api_key(self, api_key: str):
+        """Set OpenAI API key for GPT-5 providers."""
+        for provider_key in [self.PROVIDER_GPT5, self.PROVIDER_GPT5_MINI]:
+            if isinstance(self.providers[provider_key], OpenAIProvider):
+                self.providers[provider_key].set_api_key(api_key)
     
     def translate(self, text: str, target_lang: str, source_lang: str = "auto") -> str:
         """Translate text using current provider."""

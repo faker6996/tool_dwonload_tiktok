@@ -29,8 +29,8 @@ class Timeline(QFrame):
         ai_label.setStyleSheet("color: #8b9dc3; margin-left: 10px;")
         header_layout.addWidget(ai_label)
         
-        # Auto Caption Button
-        self.caption_btn = QPushButton("🎯 Auto Caption")
+        # Auto Sub Button (combines Generate + Remove subtitle features)
+        self.caption_btn = QPushButton("📝 Auto Sub")
         self.caption_btn.setObjectName("primary")
         self.caption_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self.caption_btn.clicked.connect(self.open_caption_dialog)
@@ -61,20 +61,28 @@ class Timeline(QFrame):
         layout.addWidget(self.timeline_widget)
 
     def open_caption_dialog(self):
-        """Open dialog to configure and run auto caption."""
+        """Open dialog to configure and run auto sub (transcribe, translate, or remove)."""
         from src.ui.dialogs.ai_dialogs import CaptionDialog
         
-        # Check if there's a clip to caption
+        # Check if there's a clip
         track = self.timeline_widget.main_track
         if not track.clips:
-            QMessageBox.warning(self, "Auto Caption", "Không có video trong timeline.\nVui lòng thêm video trước.")
+            QMessageBox.warning(self, "Auto Sub", "Không có video trong timeline.\nVui lòng thêm video trước.")
             return
         
         dialog = CaptionDialog(self)
         if dialog.exec():
-            language = dialog.get_language()
-            translate_to = dialog.get_translate_to()
-            self.start_transcription(language, translate_to)
+            mode = dialog.get_mode()
+            
+            if mode == "remove":
+                # Handle Remove Sub mode
+                settings = dialog.get_remove_settings()
+                self.start_subtitle_removal(settings)
+            else:
+                # Handle Transcribe or Translate mode
+                language = dialog.get_language()
+                translate_to = dialog.get_translate_to()
+                self.start_transcription(language, translate_to)
     
     def start_transcription(self, language=None, translate_to=None):
         """Start transcription with progress dialog."""
@@ -309,6 +317,137 @@ class Timeline(QFrame):
             self._progress_dialog.set_status(f"❌ Lỗi: {error}")
         
         QMessageBox.critical(self, "TTS Error", f"Lỗi khi tạo giọng nói:\n{error}")
+        
+        if self._progress_dialog:
+            self._progress_dialog.accept()
+
+    def open_subtitle_removal_dialog(self):
+        """Open dialog to configure subtitle removal."""
+        from src.ui.dialogs.subtitle_removal_dialog import SubtitleRemovalDialog
+        
+        # Check if there's a clip
+        track = self.timeline_widget.main_track
+        if not track.clips:
+            QMessageBox.warning(self, "Remove Subtitles", "Không có video trong timeline.\nVui lòng thêm video trước.")
+            return
+        
+        dialog = SubtitleRemovalDialog(self)
+        if dialog.exec():
+            settings = dialog.get_settings()
+            if settings:
+                self.start_subtitle_removal(settings)
+    
+    def start_subtitle_removal(self, settings: dict):
+        """Start subtitle removal with progress dialog."""
+        from src.ui.dialogs.ai_progress import AIProgressDialog
+        from PyQt6.QtCore import QThread, pyqtSignal
+        import os
+        import time
+        
+        track = self.timeline_widget.main_track
+        if not track.clips:
+            return
+        
+        clip = track.clips[0]
+        input_path = clip.asset_id
+        
+        # Generate output path
+        base_name = os.path.splitext(os.path.basename(input_path))[0]
+        output_dir = os.path.dirname(input_path)
+        output_path = os.path.join(output_dir, f"{base_name}_no_sub.mp4")
+        
+        # Store for use in callbacks
+        self._sub_removal_output = output_path
+        self._sub_removal_settings = settings
+        
+        # Show progress dialog
+        self._progress_dialog = AIProgressDialog(
+            self, 
+            title="🗑️ Removing Subtitles",
+            message="Đang xoá subtitle từ video..."
+        )
+        self._progress_dialog.set_status("⏳ Đang xử lý...")
+        
+        # Create worker thread
+        class SubtitleRemovalWorker(QThread):
+            progress = pyqtSignal(str)
+            finished = pyqtSignal(str)  # output path
+            error = pyqtSignal(str)
+            
+            def __init__(self, input_path, output_path, settings):
+                super().__init__()
+                self.input_path = input_path
+                self.output_path = output_path
+                self.settings = settings
+            
+            def run(self):
+                try:
+                    from src.core.ai.subtitle_remover import subtitle_remover_service
+                    
+                    algorithm = self.settings.get("algorithm", "blur")
+                    bottom_percent = self.settings.get("bottom_percent", 0.15)
+                    
+                    if algorithm == "inpaint":
+                        # Use slow but high-quality OpenCV inpaint
+                        self.progress.emit("🐢 AI Inpainting (sẽ mất 30+ phút)...")
+                        success = subtitle_remover_service.process_video(
+                            self.input_path,
+                            self.output_path,
+                            progress_callback=lambda c, t: self.progress.emit(f"⏳ Frame {c}/{t}"),
+                            region=None  # Auto-detect
+                        )
+                    else:
+                        # Use fast FFmpeg methods
+                        self.progress.emit(f"🚀 Processing with FFmpeg ({algorithm})...")
+                        success = subtitle_remover_service.remove_subtitles_ffmpeg(
+                            self.input_path,
+                            self.output_path,
+                            bottom_percent=bottom_percent,
+                            method=algorithm  # blur, black, or crop
+                        )
+                    
+                    if success:
+                        self.finished.emit(self.output_path)
+                    else:
+                        self.error.emit("Failed to process video")
+                        
+                except Exception as e:
+                    self.error.emit(str(e))
+        
+        self._sub_removal_worker = SubtitleRemovalWorker(input_path, output_path, settings)
+        self._sub_removal_worker.progress.connect(self._on_sub_removal_progress)
+        self._sub_removal_worker.finished.connect(self._on_sub_removal_finished)
+        self._sub_removal_worker.error.connect(self._on_sub_removal_error)
+        self._sub_removal_worker.start()
+        
+        self._progress_dialog.exec()
+    
+    def _on_sub_removal_progress(self, status: str):
+        if self._progress_dialog:
+            self._progress_dialog.set_status(status)
+    
+    def _on_sub_removal_finished(self, output_path: str):
+        if self._progress_dialog:
+            self._progress_dialog.set_complete(True)
+            self._progress_dialog.set_status("✅ Hoàn thành!")
+        
+        QMessageBox.information(
+            self, 
+            "Remove Subtitles", 
+            f"✅ Đã xoá subtitle thành công!\n\n"
+            f"📁 File mới: {os.path.basename(output_path)}\n"
+            f"📍 Folder: {os.path.dirname(output_path)}"
+        )
+        
+        if self._progress_dialog:
+            self._progress_dialog.accept()
+    
+    def _on_sub_removal_error(self, error: str):
+        if self._progress_dialog:
+            self._progress_dialog.set_complete(False)
+            self._progress_dialog.set_status(f"❌ Lỗi: {error}")
+        
+        QMessageBox.critical(self, "Remove Subtitles Error", f"Lỗi:\n{error}")
         
         if self._progress_dialog:
             self._progress_dialog.accept()
