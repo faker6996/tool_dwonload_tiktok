@@ -30,10 +30,16 @@ class CaptionDialog(QDialog):
         self.mode_combo.addItems([
             "📝 Transcribe (Tạo sub từ audio)",
             "🌐 Translate (Dịch sub sang ngôn ngữ khác)",
-            "🗑️ Remove Sub (Xoá sub gốc trong video)",
         ])
         self.mode_combo.currentIndexChanged.connect(self.on_mode_changed)
         mode_layout.addWidget(self.mode_combo)
+        
+        # Remove Sub checkbox option
+        from PyQt6.QtWidgets import QCheckBox
+        self.remove_sub_checkbox = QCheckBox("🗑️ Xoá sub gốc trước khi thêm sub mới")
+        self.remove_sub_checkbox.setToolTip("Xoá hardcoded subtitles trong video trước")
+        self.remove_sub_checkbox.stateChanged.connect(self.on_remove_sub_changed)
+        mode_layout.addWidget(self.remove_sub_checkbox)
         
         layout.addWidget(mode_group)
         
@@ -179,22 +185,28 @@ class CaptionDialog(QDialog):
             self.source_group.show()
             self.target_group.hide()
             self.provider_group.hide()
+            # Hide remove sub option in transcribe mode
+            self.remove_sub_checkbox.hide()
             self.remove_group.hide()
             self.info_label.setText("💡 Whisper AI sẽ transcribe audio thành text và tạo subtitles trên timeline.")
             self.info_label.setStyleSheet("color: #a1a1aa; font-size: 11px;")
-        elif index == 1:  # Translate mode
+        else:  # Translate mode
             self.source_group.hide()
             self.target_group.show()
             self.provider_group.show()
-            self.remove_group.hide()
+            # Show remove sub option in translate mode
+            self.remove_sub_checkbox.show()
             self.info_label.setText("💡 Whisper AI sẽ transcribe audio rồi dịch sang ngôn ngữ đã chọn.")
             self.info_label.setStyleSheet("color: #a1a1aa; font-size: 11px;")
-        else:  # Remove Sub mode
-            self.source_group.hide()
-            self.target_group.hide()
-            self.provider_group.hide()
-            self.remove_group.show()
-            self.info_label.setText("⚠️ Xoá subtitle gốc được ghi cứng trong video. Video mới sẽ được tạo.")
+        
+        # Keep remove_group visibility based on checkbox
+        self.remove_group.setVisible(self.remove_sub_checkbox.isChecked() and index == 1)
+    
+    def on_remove_sub_changed(self, state):
+        """Show/hide remove settings when checkbox is toggled."""
+        self.remove_group.setVisible(state == 2)  # Qt.CheckState.Checked = 2
+        if state == 2:
+            self.info_label.setText("⚠️ Sẽ xoá sub gốc trước khi thêm sub mới. Video mới sẽ được tạo.")
             self.info_label.setStyleSheet("color: #f59e0b; font-size: 11px;")
     
     def on_provider_changed(self, index):
@@ -239,17 +251,20 @@ class CaptionDialog(QDialog):
             self.result_mode = "transcribe"
             self.result_language = source_lang_map.get(self.source_lang_combo.currentIndex())
             self.result_translate_to = None
-        elif mode_index == 1:  # Translate
+        else:  # Translate
             self.result_mode = "translate"
             self.result_language = None
             self.result_translate_to = target_lang_map.get(self.target_lang_combo.currentIndex())
-        else:  # Remove Sub
-            self.result_mode = "remove"
+        
+        # Handle remove sub option (checkbox)
+        if self.remove_sub_checkbox.isChecked():
             algo_map = {0: "blur", 1: "black", 2: "crop", 3: "inpaint"}
             self.result_remove_settings = {
                 "algorithm": algo_map.get(self.remove_algo_combo.currentIndex(), "blur"),
                 "bottom_percent": self.remove_height_slider.value() / 100.0,
             }
+        else:
+            self.result_remove_settings = None
         
         self.accept()
     

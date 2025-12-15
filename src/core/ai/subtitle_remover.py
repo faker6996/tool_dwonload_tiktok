@@ -15,6 +15,267 @@ class SubtitleRemoverService:
         self.subtitle_region = None  # (x, y, w, h) or None for auto-detect
         self.inpaint_radius = 3
         self.detection_threshold = 200  # For text detection
+        self._gpu_encoder = None  # Cache GPU detection result
+    
+    def _detect_gpu(self) -> dict:
+        """Auto-detect GPU and return best encoder settings."""
+        if self._gpu_encoder is not None:
+            return self._gpu_encoder
+        
+        import subprocess
+        
+        # Check NVIDIA GPU
+        try:
+            result = subprocess.run(['nvidia-smi'], capture_output=True, timeout=5)
+            if result.returncode == 0:
+                # Check if h264_nvenc is available in ffmpeg
+                ffmpeg_check = subprocess.run(
+                    ['ffmpeg', '-encoders'], capture_output=True, text=True, timeout=5
+                )
+                if 'h264_nvenc' in ffmpeg_check.stdout:
+                    print("🎮 NVIDIA GPU detected - using NVENC acceleration")
+                    self._gpu_encoder = {
+                        "encoder": "h264_nvenc",
+                        "preset": ["-preset", "p4"],
+                        # Use constrained quality with bitrate limit to avoid large files
+                        "extra": ["-cq", "28", "-maxrate", "2M", "-bufsize", "4M"],
+                    }
+                    return self._gpu_encoder
+        except:
+            pass
+        
+        # Check AMD GPU (Linux)
+        try:
+            ffmpeg_check = subprocess.run(
+                ['ffmpeg', '-encoders'], capture_output=True, text=True, timeout=5
+            )
+            if 'h264_amf' in ffmpeg_check.stdout:
+                print("🎮 AMD GPU detected - using AMF acceleration")
+                self._gpu_encoder = {
+                    "encoder": "h264_amf",
+                    "preset": ["-quality", "speed"],
+                    "extra": [],
+                }
+                return self._gpu_encoder
+        except:
+            pass
+        
+        # Check Intel QuickSync
+        try:
+            ffmpeg_check = subprocess.run(
+                ['ffmpeg', '-encoders'], capture_output=True, text=True, timeout=5
+            )
+            if 'h264_qsv' in ffmpeg_check.stdout:
+                print("🎮 Intel GPU detected - using QuickSync acceleration")
+                self._gpu_encoder = {
+                    "encoder": "h264_qsv",
+                    "preset": ["-preset", "fast"],
+                    "extra": [],
+                }
+                return self._gpu_encoder
+        except:
+            pass
+        
+        # Check Apple Silicon (M1/M2/M3) VideoToolbox
+        try:
+            import platform
+            if platform.system() == 'Darwin':  # macOS
+                ffmpeg_check = subprocess.run(
+                    ['ffmpeg', '-encoders'], capture_output=True, text=True, timeout=5
+                )
+                if 'h264_videotoolbox' in ffmpeg_check.stdout:
+                    print("🍎 Apple Silicon detected - using VideoToolbox acceleration")
+                    self._gpu_encoder = {
+                        "encoder": "h264_videotoolbox",
+                        "preset": [],  # VideoToolbox has different options
+                        "extra": ["-q:v", "60"],  # Quality 1-100 (higher = better)
+                    }
+                    return self._gpu_encoder
+        except:
+            pass
+        
+        # Fallback to CPU
+        print("💻 No GPU acceleration found - using CPU encoding")
+        self._gpu_encoder = {
+            "encoder": "libx264",
+            "preset": ["-preset", "fast"],
+            "extra": ["-crf", "23"],
+        }
+        return self._gpu_encoder
+    
+    def detect_subtitle_region_easyocr(self, video_path: str, num_samples: int = 3) -> Optional[Tuple[int, int, int, int]]:
+        """
+        Detect subtitle region using EasyOCR for accurate text detection.
+        
+        Returns (x, y, w, h) of detected subtitle region, or None if not found.
+        """
+        try:
+            import easyocr
+        except ImportError:
+            print("⚠️ EasyOCR not installed, falling back to OpenCV")
+            return self.detect_subtitle_region_opencv(video_path, num_samples)
+        
+        cap = cv2.VideoCapture(video_path)
+        if not cap.isOpened():
+            print(f"❌ Cannot open video: {video_path}")
+            return None
+        
+        total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+        width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+        height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+        
+        # Initialize EasyOCR reader (supports Chinese, English, Vietnamese)
+        print("🔍 Loading EasyOCR model (first time may take a while)...")
+        reader = easyocr.Reader(['ch_sim', 'en'], gpu=True, verbose=False)
+        
+        # Sample frames
+        sample_positions = [int(total_frames * (0.2 + 0.6 * i / (num_samples - 1))) for i in range(num_samples)]
+        
+        all_text_boxes = []
+        
+        print(f"🔍 Detecting subtitles with EasyOCR in {num_samples} frames...")
+        
+        for i, frame_pos in enumerate(sample_positions):
+            cap.set(cv2.CAP_PROP_POS_FRAMES, frame_pos)
+            ret, frame = cap.read()
+            if not ret:
+                continue
+            
+            # Only search in bottom 40% of frame
+            search_y = int(height * 0.60)
+            roi = frame[search_y:, :]
+            
+            # Detect text with EasyOCR
+            results = reader.readtext(roi)
+            
+            for (bbox, text, prob) in results:
+                if prob > 0.3:  # Confidence threshold
+                    # bbox is [[x1,y1], [x2,y1], [x2,y2], [x1,y2]]
+                    x1, y1 = int(bbox[0][0]), int(bbox[0][1])
+                    x2, y2 = int(bbox[2][0]), int(bbox[2][1])
+                    w, h = x2 - x1, y2 - y1
+                    
+                    # Convert back to full frame coordinates
+                    all_text_boxes.append((x1, y1 + search_y, w, h))
+            
+            print(f"  Frame {i+1}/{num_samples}: Found {len(results)} text regions")
+        
+        cap.release()
+        
+        if not all_text_boxes:
+            print("⚠️ No subtitle regions detected by EasyOCR")
+            return None
+        
+        # Combine all detected boxes into one bounding box
+        min_x = min(box[0] for box in all_text_boxes)
+        min_y = min(box[1] for box in all_text_boxes)
+        max_x = max(box[0] + box[2] for box in all_text_boxes)
+        max_y = max(box[1] + box[3] for box in all_text_boxes)
+        
+        # Add small padding
+        padding_x = int(width * 0.02)
+        padding_y = int(height * 0.01)
+        
+        final_x = max(0, min_x - padding_x)
+        final_y = max(0, min_y - padding_y)
+        final_w = min(width - final_x, max_x - min_x + padding_x * 2)
+        final_h = min(height - final_y, max_y - min_y + padding_y * 2)
+        
+        print(f"✅ EasyOCR detected subtitle region: x={final_x}, y={final_y}, w={final_w}, h={final_h}")
+        return (final_x, final_y, final_w, final_h)
+    
+    def detect_subtitle_region_opencv(self, video_path: str, num_samples: int = 5) -> Optional[Tuple[int, int, int, int]]:
+        """
+        Detect subtitle region by sampling multiple frames using OpenCV.
+        
+        Returns (x, y, w, h) of detected subtitle region, or None if not found.
+        """
+        cap = cv2.VideoCapture(video_path)
+        if not cap.isOpened():
+            print(f"❌ Cannot open video: {video_path}")
+            return None
+        
+        total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+        width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+        height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+        
+        # Sample frames at different positions (skip first and last 5%)
+        sample_positions = [int(total_frames * (0.1 + 0.8 * i / (num_samples - 1))) for i in range(num_samples)]
+        
+        all_text_boxes = []
+        
+        print(f"🔍 Detecting subtitles in {num_samples} frames...")
+        
+        for i, frame_pos in enumerate(sample_positions):
+            cap.set(cv2.CAP_PROP_POS_FRAMES, frame_pos)
+            ret, frame = cap.read()
+            if not ret:
+                continue
+            
+            # Only search in bottom 30% of frame (where subtitles usually are)
+            search_y = int(height * 0.70)
+            roi = frame[search_y:, :]
+            
+            # Convert to grayscale
+            gray = cv2.cvtColor(roi, cv2.COLOR_BGR2GRAY)
+            
+            # Apply threshold to find bright text (subtitles are usually white/bright)
+            _, thresh = cv2.threshold(gray, 180, 255, cv2.THRESH_BINARY)
+            
+            # Find contours
+            contours, _ = cv2.findContours(thresh, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+            
+            for cnt in contours:
+                x, y, w, h = cv2.boundingRect(cnt)
+                # Filter: text regions should have certain aspect ratio and size
+                if w > 20 and h > 10 and w > h * 2:  # Wide rectangles (text lines)
+                    # Convert back to full frame coordinates
+                    all_text_boxes.append((x, y + search_y, w, h))
+            
+            print(f"  Frame {i+1}/{num_samples}: Found {len(contours)} potential text regions")
+        
+        cap.release()
+        
+        if not all_text_boxes:
+            print("⚠️ No subtitle regions detected, using default position")
+            return None
+        
+        # Combine all detected boxes into one bounding box
+        min_x = min(box[0] for box in all_text_boxes)
+        min_y = min(box[1] for box in all_text_boxes)
+        max_x = max(box[0] + box[2] for box in all_text_boxes)
+        max_y = max(box[1] + box[3] for box in all_text_boxes)
+        
+        # Calculate subtitle dimensions - constrain to centered area
+        sub_width = max_x - min_x
+        sub_height = max_y - min_y
+        
+        # Limit maximum width to 60% of video (subtitles shouldn't be wider)
+        max_allowed_width = int(width * 0.6)
+        if sub_width > max_allowed_width:
+            center_x = (min_x + max_x) // 2
+            min_x = center_x - max_allowed_width // 2
+            sub_width = max_allowed_width
+        
+        # Limit maximum height to 12% of video (subtitles are usually 1-2 lines)
+        max_allowed_height = int(height * 0.12)
+        if sub_height > max_allowed_height:
+            # Keep bottom portion (subtitles are at bottom)
+            min_y = max_y - max_allowed_height
+            sub_height = max_allowed_height
+        
+        # Add padding - more on top to ensure full coverage
+        padding_x = int(width * 0.02)  # 2% horizontal
+        padding_y_top = int(height * 0.03)  # 3% top padding (more to cover text above)
+        padding_y_bottom = int(height * 0.01)  # 1% bottom padding
+        
+        final_x = max(0, min_x - padding_x)
+        final_y = max(0, min_y - padding_y_top)  # Move up more
+        final_w = min(width - final_x, sub_width + padding_x * 2)
+        final_h = min(height - final_y, sub_height + padding_y_top + padding_y_bottom)
+        
+        print(f"✅ Detected subtitle region: x={final_x}, y={final_y}, w={final_w}, h={final_h}")
+        return (final_x, final_y, final_w, final_h)
     
     def remove_subtitles_ffmpeg(self, input_path: str, output_path: str,
                                   bottom_percent: float = 0.15,
@@ -51,34 +312,51 @@ class SubtitleRemoverService:
         except:
             width, height = 1920, 1080  # Default
         
-        # Calculate crop/blur region
-        crop_height = int(height * (1 - bottom_percent))
-        blur_y = int(height * (1 - bottom_percent))
-        blur_h = int(height * bottom_percent)
+        # Try to detect subtitle region using EasyOCR (only for blur/black, not crop)
+        detected_region = None
+        if method in ["blur", "black"]:
+            print("🔍 Detecting subtitle position with EasyOCR...")
+            detected_region = self.detect_subtitle_region_easyocr(input_path, num_samples=3)
+        
+        if detected_region:
+            # Use detected region
+            sub_x, sub_y, sub_width, sub_height = detected_region
+            print(f"✅ Using detected region: {sub_x},{sub_y} -> {sub_width}x{sub_height}")
+        else:
+            # Fallback to default centered area (middle 70% width, bottom 12%)
+            sub_height = int(height * min(bottom_percent, 0.12))
+            sub_y = int(height * (1 - min(bottom_percent, 0.15)))
+            sub_width = int(width * 0.7)
+            sub_x = int(width * 0.15)
+            print(f"⚠️ Using default region: {sub_x},{sub_y} -> {sub_width}x{sub_height}")
         
         if method == "crop":
             # Crop video to remove bottom portion
+            crop_height = int(height * (1 - bottom_percent))
             filter_complex = f"crop=w={width}:h={crop_height}:x=0:y=0"
         elif method == "blur":
-            # Blur bottom portion
-            filter_complex = f"[0:v]split[main][blur];[blur]crop={width}:{blur_h}:0:{blur_y},boxblur=20:20[blurred];[main][blurred]overlay=0:{blur_y}"
+            # Blur only the detected/default subtitle area
+            filter_complex = f"[0:v]split[main][blur];[blur]crop={sub_width}:{sub_height}:{sub_x}:{sub_y},boxblur=15:15[blurred];[main][blurred]overlay={sub_x}:{sub_y}"
         else:  # black
-            # Black out bottom portion
-            filter_complex = f"drawbox=x=0:y={blur_y}:w={width}:h={blur_h}:color=black:t=fill"
+            # Black out only the detected/default subtitle area
+            filter_complex = f"drawbox=x={sub_x}:y={sub_y}:w={sub_width}:h={sub_height}:color=black:t=fill"
         
-        # Build FFmpeg command
+        # Get GPU encoder settings
+        gpu_settings = self._detect_gpu()
+        encoder = gpu_settings["encoder"]
+        
+        # Build FFmpeg command with GPU acceleration
         cmd = [
             "ffmpeg", "-y",
             "-i", input_path,
             "-vf", filter_complex,
-            "-c:v", "libx264",
-            "-preset", "fast",
-            "-crf", "23",
-            "-c:a", "copy",  # Keep original audio
-            output_path
+            "-c:v", encoder,
         ]
+        cmd.extend(gpu_settings["preset"])
+        cmd.extend(gpu_settings["extra"])
+        cmd.extend(["-c:a", "copy", output_path])
         
-        print(f"🚀 Running FFmpeg ({method} mode)...")
+        print(f"🚀 Running FFmpeg ({method} mode) with {encoder}...")
         print(f"   Filter: {filter_complex}")
         
         try:

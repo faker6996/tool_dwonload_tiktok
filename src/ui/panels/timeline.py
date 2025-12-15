@@ -1,7 +1,7 @@
+import os
 from PyQt6.QtWidgets import QFrame, QVBoxLayout, QLabel, QHBoxLayout, QPushButton, QWidget, QMessageBox
 from PyQt6.QtCore import Qt
 from src.ui.timeline.timeline_widget import TimelineWidget
-
 
 class Timeline(QFrame):
     def __init__(self):
@@ -72,16 +72,19 @@ class Timeline(QFrame):
         
         dialog = CaptionDialog(self)
         if dialog.exec():
-            mode = dialog.get_mode()
+            mode = dialog.get_mode()  # "transcribe" or "translate"
+            remove_settings = dialog.get_remove_settings()  # None if checkbox not checked
             
-            if mode == "remove":
-                # Handle Remove Sub mode
-                settings = dialog.get_remove_settings()
-                self.start_subtitle_removal(settings)
+            # Store params for after remove
+            language = dialog.get_language()
+            translate_to = dialog.get_translate_to()
+            
+            if remove_settings:
+                # Run remove sub first, then transcription
+                self._pending_transcription = (language, translate_to)
+                self.start_subtitle_removal(remove_settings, then_transcribe=True)
             else:
-                # Handle Transcribe or Translate mode
-                language = dialog.get_language()
-                translate_to = dialog.get_translate_to()
+                # No remove, just transcribe/translate
                 self.start_transcription(language, translate_to)
     
     def start_transcription(self, language=None, translate_to=None):
@@ -141,6 +144,12 @@ class Timeline(QFrame):
             # Pass subtitles to Player for live display
             self._update_player_subtitles()
             
+            # Check if we came from remove sub flow - load new video
+            new_video_path = getattr(self, '_sub_removal_output', None)
+            if new_video_path and os.path.exists(new_video_path):
+                self._load_new_video_to_player_and_media(new_video_path)
+                self._sub_removal_output = None  # Clear for next time
+            
             # Show success message
             QMessageBox.information(
                 self, 
@@ -154,6 +163,27 @@ class Timeline(QFrame):
         
         if self._progress_dialog:
             self._progress_dialog.accept()
+    
+    def _load_new_video_to_player_and_media(self, video_path: str):
+        """Load the new (no-sub) video into player and add to media panel."""
+        try:
+            # Find parent edit_page to access player and media panel
+            parent = self.parent()
+            while parent:
+                # Load video into player
+                if hasattr(parent, 'player'):
+                    parent.player.load_video(video_path)
+                    print(f"✅ Loaded new video into player: {os.path.basename(video_path)}")
+                
+                # Add to media panel
+                if hasattr(parent, 'media_panel'):
+                    parent.media_panel.add_media_item(video_path)
+                    print(f"✅ Added video to media panel: {os.path.basename(video_path)}")
+                    break
+                
+                parent = parent.parent()
+        except Exception as e:
+            print(f"Error loading new video: {e}")
     
     def _update_player_subtitles(self):
         """Pass subtitle clips to Player for live display."""
@@ -337,7 +367,7 @@ class Timeline(QFrame):
             if settings:
                 self.start_subtitle_removal(settings)
     
-    def start_subtitle_removal(self, settings: dict):
+    def start_subtitle_removal(self, settings: dict, then_transcribe: bool = False):
         """Start subtitle removal with progress dialog."""
         from src.ui.dialogs.ai_progress import AIProgressDialog
         from PyQt6.QtCore import QThread, pyqtSignal
@@ -359,6 +389,7 @@ class Timeline(QFrame):
         # Store for use in callbacks
         self._sub_removal_output = output_path
         self._sub_removal_settings = settings
+        self._then_transcribe = then_transcribe  # Chain transcription after removal
         
         # Show progress dialog
         self._progress_dialog = AIProgressDialog(
@@ -430,17 +461,29 @@ class Timeline(QFrame):
         if self._progress_dialog:
             self._progress_dialog.set_complete(True)
             self._progress_dialog.set_status("✅ Hoàn thành!")
-        
-        QMessageBox.information(
-            self, 
-            "Remove Subtitles", 
-            f"✅ Đã xoá subtitle thành công!\n\n"
-            f"📁 File mới: {os.path.basename(output_path)}\n"
-            f"📍 Folder: {os.path.dirname(output_path)}"
-        )
-        
-        if self._progress_dialog:
             self._progress_dialog.accept()
+        
+        # Check if we should chain transcription
+        if getattr(self, '_then_transcribe', False) and hasattr(self, '_pending_transcription'):
+            # Update clip to use the new video without subs
+            track = self.timeline_widget.main_track
+            if track.clips:
+                track.clips[0].asset_id = output_path
+            
+            # Chain transcription automatically (no confirmation needed)
+            language, translate_to = self._pending_transcription
+            print(f"✅ Xoá subtitle thành công! Tiếp tục transcription...")
+            self._then_transcribe = False
+            self.start_transcription(language, translate_to)
+        else:
+            # Show message only if not chaining
+            QMessageBox.information(
+                self, 
+                "Remove Subtitles", 
+                f"✅ Đã xoá subtitle thành công!\n\n"
+                f"📁 File mới: {os.path.basename(output_path)}\n"
+                f"📍 Folder: {os.path.dirname(output_path)}"
+            )
     
     def _on_sub_removal_error(self, error: str):
         if self._progress_dialog:
