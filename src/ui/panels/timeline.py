@@ -88,6 +88,11 @@ class Timeline(QFrame):
             
         clip = track.clips[0]
         
+        # Store for retry with fallback
+        self._current_clip = clip
+        self._current_translate_to = translate_to
+        self._current_language = language
+        
         # Show progress dialog
         if translate_to:
             title = "🌐 Đang dịch..."
@@ -105,6 +110,7 @@ class Timeline(QFrame):
         self._transcription_worker.progress.connect(self._on_transcription_progress)
         self._transcription_worker.finished.connect(self._on_transcription_finished)
         self._transcription_worker.error.connect(self._on_transcription_error)
+        self._transcription_worker.rate_limit.connect(self._on_rate_limit)
         self._transcription_worker.start()
         
         self._progress_dialog.exec()
@@ -168,6 +174,47 @@ class Timeline(QFrame):
         
         if self._progress_dialog:
             self._progress_dialog.accept()
+    
+    def _on_rate_limit(self, provider: str):
+        """Handle rate limit error - ask user if they want to fallback to Google Translate."""
+        if self._progress_dialog:
+            self._progress_dialog.hide()
+        
+        reply = QMessageBox.question(
+            self,
+            "⚠️ API Rate Limit",
+            f"❌ {provider} đã hết quota miễn phí hôm nay!\n\n"
+            f"Bạn có muốn dùng Google Translate (miễn phí, không giới hạn) để tiếp tục?\n\n"
+            f"• Google Translate: Nhanh, miễn phí, chất lượng tốt\n"
+            f"• Gemini Pro: Chờ đến ngày mai để reset quota",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.Yes
+        )
+        
+        if reply == QMessageBox.StandardButton.Yes:
+            # Switch to Google Translate and retry
+            from src.core.ai.translation import translation_service
+            translation_service.set_provider("google")
+            
+            # Close old dialog
+            if self._progress_dialog:
+                self._progress_dialog.accept()
+            
+            # Restart with Google Translate
+            print("🔄 Retrying with Google Translate...")
+            self.start_transcription(self._current_language, self._current_translate_to)
+        else:
+            # User cancelled
+            if self._progress_dialog:
+                self._progress_dialog.set_complete(False)
+                self._progress_dialog.set_status("❌ Đã hủy do rate limit")
+                self._progress_dialog.accept()
+            
+            QMessageBox.information(
+                self,
+                "Thông báo",
+                "Vui lòng thử lại sau hoặc dùng Google Translate trong cài đặt."
+            )
 
     def open_tts_dialog(self):
         """Open TTS dialog with voice selection."""

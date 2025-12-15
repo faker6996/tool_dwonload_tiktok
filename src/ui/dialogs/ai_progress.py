@@ -95,23 +95,30 @@ class TranscriptionWorker(QThread):
     progress = pyqtSignal(str)  # Status message
     finished = pyqtSignal(list)  # Segments result
     error = pyqtSignal(str)  # Error message
+    rate_limit = pyqtSignal(str)  # Rate limit hit - provider name
     
     def __init__(self, file_path: str, language: str = None, translate_to: str = None):
         super().__init__()
         self.file_path = file_path
         self.language = language
         self.translate_to = translate_to
+        self.use_fallback = False  # Set by UI after rate limit dialog
     
     def run(self):
         try:
             from src.core.ai.transcription import transcription_service
+            from src.core.ai.translation import RateLimitError
             
             if self.translate_to:
                 self.progress.emit(f"🎯 Đang transcribe và dịch sang {self.translate_to}...")
-                segments = transcription_service.transcribe_and_translate(
-                    self.file_path, 
-                    target_language=self.translate_to
-                )
+                try:
+                    segments = transcription_service.transcribe_and_translate(
+                        self.file_path, 
+                        target_language=self.translate_to
+                    )
+                except RateLimitError as e:
+                    self.rate_limit.emit(e.provider)
+                    return  # Let UI handle fallback decision
             else:
                 self.progress.emit(f"🎯 Đang transcribe ({self.language or 'auto-detect'})...")
                 segments = transcription_service.transcribe(

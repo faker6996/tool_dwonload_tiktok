@@ -35,6 +35,55 @@ class TranscriptionService:
         self.model = whisper.load_model(self.model_name)
         print("Model loaded successfully!")
 
+    def _preprocess_audio(self, file_path: str) -> str:
+        """
+        Preprocess audio by converting to WAV format.
+        This fixes issues with certain audio codecs that cause NaN errors in Whisper.
+        """
+        import subprocess
+        import tempfile
+        import hashlib
+        
+        # Create temp file path
+        file_hash = hashlib.md5(file_path.encode()).hexdigest()[:8]
+        temp_wav = os.path.join(tempfile.gettempdir(), f"whisper_audio_{file_hash}.wav")
+        
+        # If already preprocessed, return cached file
+        if os.path.exists(temp_wav):
+            return temp_wav
+        
+        print("🔊 Preprocessing audio for Whisper...")
+        
+        try:
+            # Convert to 16kHz mono WAV (optimal for Whisper)
+            cmd = [
+                "ffmpeg", "-y",
+                "-i", file_path,
+                "-vn",  # No video
+                "-acodec", "pcm_s16le",  # 16-bit PCM
+                "-ar", "16000",  # 16kHz sample rate
+                "-ac", "1",  # Mono
+                temp_wav
+            ]
+            
+            result = subprocess.run(
+                cmd, 
+                capture_output=True, 
+                text=True,
+                timeout=300  # 5 minute timeout
+            )
+            
+            if os.path.exists(temp_wav) and os.path.getsize(temp_wav) > 1000:
+                print("✅ Audio preprocessed successfully!")
+                return temp_wav
+            else:
+                print("⚠️ Audio preprocessing failed, using original file")
+                return file_path
+                
+        except Exception as e:
+            print(f"⚠️ FFmpeg preprocessing error: {e}")
+            return file_path
+
     def transcribe(self, file_path: str, language: str = None) -> List[Dict[str, Any]]:
         """
         Transcribe audio/video file to segments.
@@ -53,18 +102,21 @@ class TranscriptionService:
 
         print(f"Transcribing {file_path}...")
         
+        # Preprocess audio to fix codec issues
+        processed_file = self._preprocess_audio(file_path)
+        
         try:
             # Use MLX Whisper if available
             if self.use_mlx:
-                return self._transcribe_mlx(file_path, language)
+                return self._transcribe_mlx(processed_file, language)
             
             # Standard Whisper
             print("This may take several minutes depending on video length...")
-            options = {"task": "transcribe"}
+            options = {"task": "transcribe", "fp16": False}  # Disable fp16 to avoid NaN issues
             if language:
                 options["language"] = language
             
-            result = self.model.transcribe(file_path, **options)
+            result = self.model.transcribe(processed_file, **options)
             
             segments = []
             for seg in result.get("segments", []):
@@ -134,67 +186,106 @@ class TranscriptionService:
         if target_language == "en":
             return self._transcribe_to_english(file_path)
         
-        # For other languages, use deep-translator
-        print(f"[DEBUG] Translating {len(segments)} segments to '{target_language}' using GoogleTranslator...")
+        # Use TranslationService for translation
+        from .translation import translation_service
+        
+        provider_name = translation_service.get_provider_name()
+        print(f"🚀 Translating {len(segments)} segments to '{target_language}' using {provider_name}...")
         
         try:
-            from deep_translator import GoogleTranslator
-            
+            # Batch translation for speed - 20 segments per batch
+            BATCH_SIZE = 20
             translated_segments = []
+            
+            # Filter out empty segments and track indices
+            valid_indices = []
+            valid_texts = []
+            for i, seg in enumerate(segments):
+                text = seg["text"].strip()
+                if text:
+                    valid_indices.append(i)
+                    valid_texts.append(text)
+            
+            print(f"📦 Processing {len(valid_texts)} non-empty segments in batches of {BATCH_SIZE}...")
+            
+            # Prepare all batches
+            batches = []
+            for batch_start in range(0, len(valid_texts), BATCH_SIZE):
+                batch_end = min(batch_start + BATCH_SIZE, len(valid_texts))
+                batch_texts = valid_texts[batch_start:batch_end]
+                batches.append((batch_start, batch_texts))
+            
+            total_batches = len(batches)
+            print(f"⚡ Running {total_batches} batches in PARALLEL (2 workers)...")
+            
+            # Parallel translation using ThreadPoolExecutor
+            from concurrent.futures import ThreadPoolExecutor, as_completed
+            import time
+            
+            def translate_batch_worker(args):
+                batch_idx, batch_texts = args
+                # Small delay to avoid rate limiting
+                time.sleep(0.5)
+                try:
+                    result = translation_service.translate_batch(
+                        batch_texts,
+                        target_lang=target_language,
+                        source_lang="auto"
+                    )
+                    return (batch_idx, result)
+                except Exception as e:
+                    print(f"  ⚠️ Batch {batch_idx} error: {e}")
+                    return (batch_idx, batch_texts)  # Return original on error
+            
+            # Run batches in parallel with 2 workers (safer for API limits)
+            all_translations = [None] * len(valid_texts)
+            completed = 0
+            
+            with ThreadPoolExecutor(max_workers=2) as executor:
+                futures = {executor.submit(translate_batch_worker, batch): batch for batch in batches}
+                
+                for future in as_completed(futures):
+                    batch_start, batch_results = future.result()
+                    
+                    # Store results at correct positions
+                    for i, result in enumerate(batch_results):
+                        if batch_start + i < len(all_translations):
+                            all_translations[batch_start + i] = result
+                    
+                    completed += 1
+                    print(f"  ✅ Completed {completed}/{total_batches} batches")
+            
+            # Rebuild segments with translations
+            translation_map = dict(zip(valid_indices, all_translations))
             
             for i, seg in enumerate(segments):
                 original_text = seg["text"].strip()
-                if not original_text:
-                    translated_segments.append(seg)
-                    continue
-                    
-                try:
-                    # Try with auto-detect first
-                    translator = GoogleTranslator(source='auto', target=target_language)
-                    translated_text = translator.translate(original_text)
-                    
-                    # If translation returned same text, try with explicit Chinese source
-                    if translated_text == original_text:
-                        # Try Traditional Chinese
-                        translator = GoogleTranslator(source='zh-TW', target=target_language)
-                        translated_text = translator.translate(original_text)
-                    
-                    # If still same, try Simplified Chinese
-                    if translated_text == original_text:
-                        translator = GoogleTranslator(source='zh-CN', target=target_language)
-                        translated_text = translator.translate(original_text)
-                    
-                    # Use translated if it's different and valid
-                    if translated_text and translated_text.strip() and translated_text != original_text:
+                
+                if i in translation_map:
+                    translated_text = translation_map[i]
+                    if translated_text and translated_text.strip():
                         final_text = translated_text.strip()
                     else:
                         final_text = original_text
-                        print(f"  ⚠️ [{i+1}] Could not translate: '{original_text[:30]}...'")
-                    
-                    translated_segments.append({
-                        "start": seg["start"],
-                        "end": seg["end"],
-                        "text": final_text
-                    })
-                    
-                    # Debug: show translation progress
-                    if i < 3 or (i + 1) % 10 == 0:
-                        print(f"  [{i+1}/{len(segments)}] '{original_text[:20]}' -> '{final_text[:20]}'")
-                        
-                except Exception as e:
-                    print(f"Translation error for segment {i}: {e}")
-                    translated_segments.append({
-                        "start": seg["start"],
-                        "end": seg["end"],
-                        "text": original_text
-                    })
+                else:
+                    final_text = original_text
+                
+                translated_segments.append({
+                    "start": seg["start"],
+                    "end": seg["end"],
+                    "text": final_text
+                })
             
-            print(f"✅ Translation complete! {len(translated_segments)} segments translated to {target_language}.")
+            # Show sample translations
+            print(f"\n📝 Sample translations:")
+            for i in range(min(5, len(valid_texts))):
+                orig = valid_texts[i][:25]
+                trans = all_translations[i][:25] if i < len(all_translations) else "N/A"
+                print(f"  '{orig}...' -> '{trans}...'")
+            
+            print(f"\n✅ Translation complete! {len(translated_segments)} segments translated to {target_language}.")
             return translated_segments
             
-        except ImportError:
-            print("❌ deep-translator not installed. Run: pip install deep-translator")
-            return segments
         except Exception as e:
             print(f"❌ Translation error: {e}")
             return segments

@@ -1,6 +1,6 @@
 from PyQt6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QLabel, QComboBox, 
-    QPushButton, QTextEdit, QProgressBar, QGroupBox
+    QPushButton, QTextEdit, QProgressBar, QGroupBox, QLineEdit
 )
 from PyQt6.QtCore import Qt
 
@@ -11,7 +11,7 @@ class CaptionDialog(QDialog):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setWindowTitle("🎯 Auto Caption Settings")
-        self.setFixedSize(450, 280)
+        self.setFixedSize(500, 400)
         self.result_language = None
         self.result_translate_to = None
         self.setup_ui()
@@ -77,6 +77,38 @@ class CaptionDialog(QDialog):
         self.target_group.hide()  # Hidden by default
         layout.addWidget(self.target_group)
         
+        # Translation Provider Selection (only for translate mode)
+        self.provider_group = QGroupBox("🤖 Công cụ dịch")
+        provider_layout = QVBoxLayout(self.provider_group)
+        
+        provider_row = QHBoxLayout()
+        provider_row.addWidget(QLabel("Provider:"))
+        self.provider_combo = QComboBox()
+        self.provider_combo.addItems([
+            "Google Translate (Miễn phí)",
+            "Gemini Pro (Chất lượng cao)",
+        ])
+        self.provider_combo.currentIndexChanged.connect(self.on_provider_changed)
+        self.provider_combo.setMinimumWidth(200)
+        provider_row.addWidget(self.provider_combo)
+        provider_row.addStretch()
+        provider_layout.addLayout(provider_row)
+        
+        # API Key input (for Gemini)
+        self.api_key_row = QHBoxLayout()
+        self.api_key_row.addWidget(QLabel("API Key:"))
+        self.api_key_input = QLineEdit()
+        self.api_key_input.setPlaceholderText("Nhập Gemini API Key...")
+        self.api_key_input.setEchoMode(QLineEdit.EchoMode.Password)
+        self.api_key_row.addWidget(self.api_key_input)
+        provider_layout.addLayout(self.api_key_row)
+        
+        # Hide API key row initially
+        self.api_key_input.hide()
+        
+        self.provider_group.hide()  # Hidden by default
+        layout.addWidget(self.provider_group)
+        
         # Info label
         self.info_label = QLabel("💡 Whisper AI sẽ transcribe audio thành text và tạo subtitles trên timeline.")
         self.info_label.setWordWrap(True)
@@ -104,13 +136,33 @@ class CaptionDialog(QDialog):
         if index == 0:  # Transcribe mode
             self.source_group.show()
             self.target_group.hide()
+            self.provider_group.hide()
             self.info_label.setText("💡 Whisper AI sẽ transcribe audio thành text và tạo subtitles trên timeline.")
         else:  # Translate mode
             self.source_group.hide()
             self.target_group.show()
+            self.provider_group.show()
             self.info_label.setText("💡 Whisper AI sẽ transcribe audio rồi dịch sang ngôn ngữ đã chọn.")
     
+    def on_provider_changed(self, index):
+        if index == 1:  # Gemini Pro
+            self.api_key_input.show()
+        else:  # Google Translate
+            self.api_key_input.hide()
+    
     def accept_with_settings(self):
+        # Configure translation provider
+        if self.mode_combo.currentIndex() == 1:  # Translate mode
+            from src.core.ai.translation import translation_service
+            
+            if self.provider_combo.currentIndex() == 0:
+                translation_service.set_provider("google")
+            else:
+                translation_service.set_provider("gemini")
+                api_key = self.api_key_input.text().strip()
+                if api_key:
+                    translation_service.set_gemini_api_key(api_key)
+        
         # Map combo selection to language code
         source_lang_map = {
             0: None, 1: "vi", 2: "en", 3: "zh", 4: "ja", 5: "ko",

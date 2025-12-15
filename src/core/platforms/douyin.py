@@ -129,13 +129,45 @@ class DouyinDownloader(BaseDownloader):
                 except:
                     print("Navigation timeout, waiting for video...")
                 
-                # Try to get title
+                # Try to get title - use more specific selectors for Douyin
                 try:
-                    title_el = page.query_selector('h1, .video-info-title, [class*="title"]')
-                    if title_el:
-                        state['title'] = title_el.inner_text()[:100]
-                except:
-                    pass
+                    # Wait a bit for page to load
+                    page.wait_for_timeout(1000)
+                    
+                    # Try multiple selectors in order of specificity
+                    title_selectors = [
+                        '[data-e2e="video-desc"]',  # Video description
+                        '.video-info-detail .title',
+                        '.video-info-title',
+                        'span[class*="title"]',
+                        '.xgplayer-title',
+                        'meta[property="og:title"]',
+                        'meta[name="description"]',
+                    ]
+                    
+                    for selector in title_selectors:
+                        try:
+                            if selector.startswith('meta'):
+                                el = page.query_selector(selector)
+                                if el:
+                                    content = el.get_attribute('content')
+                                    if content and len(content) > 5:
+                                        state['title'] = content[:200]
+                                        print(f"📝 Found title: {state['title'][:50]}...")
+                                        break
+                            else:
+                                el = page.query_selector(selector)
+                                if el:
+                                    text = el.inner_text().strip()
+                                    # Skip if too short or looks like UI element
+                                    if text and len(text) > 5 and '搜索' not in text and 'search' not in text.lower():
+                                        state['title'] = text[:200]
+                                        print(f"📝 Found title: {state['title'][:50]}...")
+                                        break
+                        except:
+                            continue
+                except Exception as e:
+                    print(f"⚠️ Could not extract title: {e}")
                 
                 # Wait for video to load (up to 60 seconds)
                 print("\n⏳ Đang chờ video load...")
