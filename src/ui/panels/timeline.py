@@ -187,12 +187,17 @@ class Timeline(QFrame):
             
             progress_callback(10)
             
-            # Run transcription
-            segments = transcription_service.transcribe(
-                video_path,
-                source_language=language,
-                translate_to=translate_to
-            )
+            # Run transcription - use different method based on translate_to
+            if translate_to:
+                segments = transcription_service.transcribe_and_translate(
+                    video_path,
+                    target_language=translate_to
+                )
+            else:
+                segments = transcription_service.transcribe(
+                    video_path,
+                    language=language
+                )
             
             progress_callback(90)
             
