@@ -1,6 +1,6 @@
 import os
 from PyQt6.QtWidgets import QFrame, QVBoxLayout, QLabel, QHBoxLayout, QPushButton, QWidget, QMessageBox
-from PyQt6.QtCore import Qt
+from PyQt6.QtCore import Qt, pyqtSlot
 from src.ui.timeline.timeline_widget import TimelineWidget
 
 class Timeline(QFrame):
@@ -104,16 +104,12 @@ class Timeline(QFrame):
         self._current_translate_to = translate_to
         self._current_language = language
         
-        # Show progress dialog
+        # No dialog - user wants to see progress in queue instead
+        # Just print to console for debugging
         if translate_to:
-            title = "🌐 Đang dịch..."
-            msg = f"Transcribe và dịch sang {translate_to.upper()}"
+            print(f"🌐 Starting transcription + translation to {translate_to.upper()}...")
         else:
-            title = "🎯 Auto Caption"
-            msg = "Đang transcribe audio..."
-            
-        self._progress_dialog = AIProgressDialog(self, title=title, message=msg)
-        self._progress_dialog.set_status("⏳ Đang tải model AI...")
+            print(f"🎯 Starting transcription...")
         
         # Create worker thread
         print(f"[DEBUG] Creating TranscriptionWorker with file={clip.asset_id}, translate_to={translate_to}")
@@ -123,8 +119,6 @@ class Timeline(QFrame):
         self._transcription_worker.error.connect(self._on_transcription_error)
         self._transcription_worker.rate_limit.connect(self._on_rate_limit)
         self._transcription_worker.start()
-        
-        self._progress_dialog.exec()
     
     def _on_transcription_progress(self, status: str):
         if self._progress_dialog:
@@ -162,28 +156,40 @@ class Timeline(QFrame):
             QMessageBox.warning(self, "Auto Caption", "Không tìm thấy lời nói trong video.")
         
         if self._progress_dialog:
-            self._progress_dialog.accept()
+            self._progress_dialog.close()
     
     def _load_new_video_to_player_and_media(self, video_path: str):
-        """Load the new (no-sub) video into player and add to media panel."""
+        """Load the new (no-sub) video into player, media panel, and update timeline."""
         try:
+            # Update timeline clip to use new video
+            track = self.timeline_widget.main_track
+            if track.clips:
+                track.clips[0].asset_id = video_path
+                track.clips[0].name = os.path.basename(video_path)
+                self.timeline_widget.refresh_tracks()  # Correct method name
+                print(f"✅ Updated timeline clip to: {os.path.basename(video_path)}")
+            
             # Find parent edit_page to access player and media panel
             parent = self.parent()
             while parent:
                 # Load video into player
                 if hasattr(parent, 'player'):
-                    parent.player.load_video(video_path)
-                    print(f"✅ Loaded new video into player: {os.path.basename(video_path)}")
+                    if hasattr(parent.player, 'load_clip_from_path'):
+                        parent.player.load_clip_from_path(video_path)
+                        print(f"✅ Loaded new video into player: {os.path.basename(video_path)}")
                 
                 # Add to media panel
                 if hasattr(parent, 'media_panel'):
-                    parent.media_panel.add_media_item(video_path)
-                    print(f"✅ Added video to media panel: {os.path.basename(video_path)}")
+                    if hasattr(parent.media_panel, 'import_media'):
+                        parent.media_panel.import_media([video_path])
+                        print(f"✅ Added video to media panel: {os.path.basename(video_path)}")
                     break
                 
                 parent = parent.parent()
         except Exception as e:
             print(f"Error loading new video: {e}")
+            import traceback
+            traceback.print_exc()
     
     def _update_player_subtitles(self):
         """Pass subtitle clips to Player for live display."""
@@ -211,7 +217,7 @@ class Timeline(QFrame):
         QMessageBox.critical(self, "Auto Caption Error", f"Lỗi khi transcribe:\n{error}")
         
         if self._progress_dialog:
-            self._progress_dialog.accept()
+            self._progress_dialog.close()
     
     def _on_rate_limit(self, provider: str):
         """Handle rate limit error - ask user if they want to fallback to Google Translate."""
@@ -236,7 +242,7 @@ class Timeline(QFrame):
             
             # Close old dialog
             if self._progress_dialog:
-                self._progress_dialog.accept()
+                self._progress_dialog.close()
             
             # Restart with Google Translate
             print("🔄 Retrying with Google Translate...")
@@ -246,7 +252,7 @@ class Timeline(QFrame):
             if self._progress_dialog:
                 self._progress_dialog.set_complete(False)
                 self._progress_dialog.set_status("❌ Đã hủy do rate limit")
-                self._progress_dialog.accept()
+                self._progress_dialog.close()
             
             QMessageBox.information(
                 self,
@@ -442,7 +448,7 @@ class Timeline(QFrame):
         )
         
         if self._progress_dialog:
-            self._progress_dialog.accept()
+            self._progress_dialog.close()
     
     def _on_tts_error(self, error: str):
         if self._progress_dialog:
@@ -452,7 +458,7 @@ class Timeline(QFrame):
         QMessageBox.critical(self, "TTS Error", f"Lỗi khi tạo giọng nói:\n{error}")
         
         if self._progress_dialog:
-            self._progress_dialog.accept()
+            self._progress_dialog.close()
 
     def open_subtitle_removal_dialog(self):
         """Open dialog to configure subtitle removal."""
@@ -572,6 +578,7 @@ class Timeline(QFrame):
         
         queue_manager.register_handler(TaskType.REMOVE_SUB, handle_remove_sub)
     
+    @pyqtSlot(str)
     def _on_queue_sub_removal_complete(self, output_path: str):
         """Called when queued subtitle removal completes."""
         import os
@@ -580,6 +587,13 @@ class Timeline(QFrame):
         track = self.timeline_widget.main_track
         if track.clips:
             track.clips[0].asset_id = output_path
+            track.clips[0].name = os.path.basename(output_path)
+        
+        # Store path for transcription callback
+        self._sub_removal_output = output_path
+        
+        # Load new video into player and media pool
+        self._load_new_video_to_player_and_media(output_path)
         
         # Chain transcription if requested
         if getattr(self, '_then_transcribe', False) and hasattr(self, '_pending_transcription'):
@@ -604,7 +618,7 @@ class Timeline(QFrame):
         if self._progress_dialog:
             self._progress_dialog.set_complete(True)
             self._progress_dialog.set_status("✅ Hoàn thành!")
-            self._progress_dialog.accept()
+            self._progress_dialog.close()
         
         # Check if we should chain transcription
         if getattr(self, '_then_transcribe', False) and hasattr(self, '_pending_transcription'):
@@ -636,4 +650,4 @@ class Timeline(QFrame):
         QMessageBox.critical(self, "Remove Subtitles Error", f"Lỗi:\n{error}")
         
         if self._progress_dialog:
-            self._progress_dialog.accept()
+            self._progress_dialog.close()

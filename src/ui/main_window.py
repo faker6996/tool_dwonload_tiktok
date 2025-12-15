@@ -18,6 +18,9 @@ class MainWindow(QMainWindow):
         self.setStyleSheet(DARK_THEME)
         
         self.setup_ui()
+        
+        # Setup queue manager early so badge updates work
+        self._setup_queue_manager()
 
     def setup_ui(self):
         central_widget = QWidget()
@@ -43,7 +46,13 @@ class MainWindow(QMainWindow):
         
         top_bar_layout.addStretch()
         
-        # Queue Button (shows popup panel)
+        # Queue Button with badge (shows popup panel)
+        queue_container = QWidget()
+        queue_container.setFixedSize(44, 44)
+        queue_container_layout = QHBoxLayout(queue_container)
+        queue_container_layout.setContentsMargins(0, 0, 0, 0)
+        queue_container_layout.setSpacing(0)
+        
         self.queue_btn = QPushButton("📋")
         self.queue_btn.setFixedSize(36, 36)
         self.queue_btn.setToolTip("Task Queue")
@@ -59,22 +68,28 @@ class MainWindow(QMainWindow):
             }
         """)
         self.queue_btn.clicked.connect(self._toggle_queue_panel)
-        top_bar_layout.addWidget(self.queue_btn)
+        queue_container_layout.addWidget(self.queue_btn)
         
-        # Queue stats label
+        # Queue badge (positioned at top-right like iOS)
         self.queue_stats = QLabel("0")
+        self.queue_stats.setParent(queue_container)
+        self.queue_stats.setFixedSize(20, 20)
         self.queue_stats.setStyleSheet("""
-            background: #ef4444;
-            color: white;
-            font-size: 10px;
-            font-weight: bold;
-            padding: 2px 6px;
-            border-radius: 8px;
-            min-width: 16px;
+            QLabel {
+                background: #ef4444;
+                color: white;
+                font-size: 11px;
+                font-weight: bold;
+                border-radius: 10px;
+                border: 2px solid #18181b;
+            }
         """)
         self.queue_stats.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.queue_stats.move(28, -2)  # Position at top-right corner
+        self.queue_stats.raise_()  # Ensure it's on top
         self.queue_stats.hide()  # Hidden when 0 tasks
-        top_bar_layout.addWidget(self.queue_stats)
+        
+        top_bar_layout.addWidget(queue_container)
         
         # Spacer
         top_bar_layout.addSpacing(8)

@@ -124,41 +124,53 @@ class SubtitleRemoverService:
         width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
         height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
         
-        # Initialize EasyOCR reader (supports Chinese, English, Vietnamese)
+        # Try Traditional Chinese first (common for TikTok/Douyin from Taiwan/HK)
+        # If no results, try Simplified Chinese (Mainland China)
         print("🔍 Loading EasyOCR model (first time may take a while)...")
-        reader = easyocr.Reader(['ch_sim', 'en'], gpu=True, verbose=False)
-        
-        # Sample frames
-        sample_positions = [int(total_frames * (0.2 + 0.6 * i / (num_samples - 1))) for i in range(num_samples)]
         
         all_text_boxes = []
         
-        print(f"🔍 Detecting subtitles with EasyOCR in {num_samples} frames...")
-        
-        for i, frame_pos in enumerate(sample_positions):
-            cap.set(cv2.CAP_PROP_POS_FRAMES, frame_pos)
-            ret, frame = cap.read()
-            if not ret:
-                continue
-            
-            # Only search in bottom 40% of frame
-            search_y = int(height * 0.60)
-            roi = frame[search_y:, :]
-            
-            # Detect text with EasyOCR
-            results = reader.readtext(roi)
-            
-            for (bbox, text, prob) in results:
-                if prob > 0.3:  # Confidence threshold
-                    # bbox is [[x1,y1], [x2,y1], [x2,y2], [x1,y2]]
-                    x1, y1 = int(bbox[0][0]), int(bbox[0][1])
-                    x2, y2 = int(bbox[2][0]), int(bbox[2][1])
-                    w, h = x2 - x1, y2 - y1
+        for lang_set in [['ch_tra', 'en'], ['ch_sim', 'en']]:
+            try:
+                reader = easyocr.Reader(lang_set, gpu=True, verbose=False)
+                
+                # Sample frames
+                sample_positions = [int(total_frames * (0.2 + 0.6 * i / (num_samples - 1))) for i in range(num_samples)]
+                
+                print(f"🔍 Detecting subtitles with EasyOCR ({lang_set[0]}) in {num_samples} frames...")
+                
+                for i, frame_pos in enumerate(sample_positions):
+                    cap.set(cv2.CAP_PROP_POS_FRAMES, frame_pos)
+                    ret, frame = cap.read()
+                    if not ret:
+                        continue
                     
-                    # Convert back to full frame coordinates
-                    all_text_boxes.append((x1, y1 + search_y, w, h))
-            
-            print(f"  Frame {i+1}/{num_samples}: Found {len(results)} text regions")
+                    # Only search in bottom 40% of frame
+                    search_y = int(height * 0.60)
+                    roi = frame[search_y:, :]
+                    
+                    # Detect text with EasyOCR
+                    results = reader.readtext(roi)
+                    
+                    for (bbox, text, prob) in results:
+                        if prob > 0.3:  # Confidence threshold
+                            # bbox is [[x1,y1], [x2,y1], [x2,y2], [x1,y2]]
+                            x1, y1 = int(bbox[0][0]), int(bbox[0][1])
+                            x2, y2 = int(bbox[2][0]), int(bbox[2][1])
+                            w, h = x2 - x1, y2 - y1
+                            
+                            # Convert back to full frame coordinates
+                            all_text_boxes.append((x1, y1 + search_y, w, h))
+                    
+                    print(f"  Frame {i+1}/{num_samples}: Found {len(results)} text regions")
+                
+                # If found results, break out of loop
+                if all_text_boxes:
+                    print(f"✅ Found {len(all_text_boxes)} text regions using {lang_set[0]}")
+                    break
+            except Exception as e:
+                print(f"⚠️ Error with {lang_set}: {e}")
+                continue
         
         cap.release()
         

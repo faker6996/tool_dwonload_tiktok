@@ -30,10 +30,23 @@ class TranslationProvider(ABC):
 
 
 class GoogleTranslateProvider(TranslationProvider):
-    """Free Google Translate via deep-translator."""
+    """Free Google Translate via deep-translator with Chinese handling."""
     
     def get_name(self) -> str:
         return "Google Translate"
+    
+    def _detect_chinese(self, text: str) -> str:
+        """Detect if text is Chinese and return appropriate source code."""
+        if not text:
+            return "auto"
+        # Check for Chinese characters
+        has_chinese = any('\u4e00' <= char <= '\u9fff' for char in text)
+        if has_chinese:
+            # Check for Traditional Chinese specific characters
+            traditional_chars = set('臺灣國語這裡說話車輛電話時間東西開關嗎們個為還會點對沒過從門發過問題經與應該無過後來現這麼頭個')
+            has_traditional = any(char in traditional_chars for char in text)
+            return "zh-TW" if has_traditional else "zh-CN"
+        return "auto"
     
     def translate(self, text: str, target_lang: str, source_lang: str = "auto") -> str:
         if not text or not text.strip():
@@ -41,11 +54,37 @@ class GoogleTranslateProvider(TranslationProvider):
         
         try:
             from deep_translator import GoogleTranslator
+            
+            # Auto-detect Chinese source
+            if source_lang == "auto":
+                source_lang = self._detect_chinese(text)
+            
             translator = GoogleTranslator(source=source_lang, target=target_lang)
-            return translator.translate(text) or text
+            result = translator.translate(text)
+            
+            # If translation returned same text, try with explicit Chinese
+            if result == text and source_lang == "auto":
+                for src in ["zh-TW", "zh-CN"]:
+                    try:
+                        translator = GoogleTranslator(source=src, target=target_lang)
+                        result = translator.translate(text)
+                        if result and result != text:
+                            return result
+                    except:
+                        continue
+            
+            return result or text
+            
         except Exception as e:
             print(f"⚠️ Google Translate error: {e}")
             return text
+    
+    def translate_batch(self, texts: list, target_lang: str, source_lang: str = "auto") -> list:
+        """Batch translation for Google Translate - individual calls but with retry."""
+        results = []
+        for text in texts:
+            results.append(self.translate(text, target_lang, source_lang))
+        return results
 
 
 class GeminiProProvider(TranslationProvider):
