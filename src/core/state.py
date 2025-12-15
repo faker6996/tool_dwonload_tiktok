@@ -40,6 +40,13 @@ class StateManager(QObject):
     def get_asset(self, asset_id: str) -> Dict:
         return self.state["media_pool"]["assets"].get(asset_id)
 
+    def remove_asset(self, asset_id: str):
+        """
+        Remove an asset from the media pool if it exists.
+        """
+        if asset_id in self.state["media_pool"]["assets"]:
+            del self.state["media_pool"]["assets"][asset_id]
+
 
 # Global instance
 state_manager = StateManager()

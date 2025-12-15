@@ -1,12 +1,97 @@
 from PyQt6.QtWidgets import (QFrame, QVBoxLayout, QLabel, QListWidget, QListWidgetItem, 
-                             QAbstractItemView, QPushButton, QFileDialog, QWidget, QHBoxLayout, QLineEdit, QComboBox)
-from PyQt6.QtCore import Qt, QSize, QMimeData, QUrl
+                             QAbstractItemView, QPushButton, QFileDialog, QWidget, QHBoxLayout, QLineEdit, QComboBox, QToolButton)
+from PyQt6.QtCore import Qt, QSize, QMimeData, QUrl, pyqtSignal
 from PyQt6.QtGui import QIcon, QDragEnterEvent, QDropEvent, QDrag, QPixmap, QColor, QBrush
 
 import os
 
 from src.core.state import state_manager
 from src.ui.threads import IngestionThread
+
+
+class AssetItemWidget(QWidget):
+    """
+    Custom widget to display a media item with a delete button.
+    """
+    delete_requested = pyqtSignal(str)
+
+    def __init__(self, asset_id: str, name: str, icon: QIcon):
+        super().__init__()
+        self.asset_id = asset_id
+
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(6, 6, 6, 6)
+        layout.setSpacing(6)
+
+        # Thumbnail container (button overlays top-right of the image)
+        self.thumb_container = QFrame()
+        self.thumb_container.setStyleSheet("background-color: #27272a; border-radius: 5px;")
+        self.thumb_container.setMinimumHeight(90)
+        self.thumb_container.setFixedHeight(90)
+        thumb_layout = QVBoxLayout(self.thumb_container)
+        thumb_layout.setContentsMargins(0, 0, 0, 0)
+        thumb_layout.setSpacing(0)
+
+        thumb_label = QLabel()
+        thumb_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        pixmap = icon.pixmap(100, 80)
+        thumb_label.setPixmap(pixmap)
+        thumb_layout.addWidget(thumb_label)
+
+        # Delete button - positioned at top-right corner using absolute positioning
+        self.delete_btn = QToolButton(self.thumb_container)
+        self.delete_btn.setText("×")  # Using × symbol for better appearance
+        self.delete_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.delete_btn.setFixedSize(22, 22)
+        self.delete_btn.move(78, 3)  # Position at top-right (100-22=78, margin=3)
+        self.delete_btn.setStyleSheet("""
+            QToolButton {
+                background-color: rgba(239, 68, 68, 0.95);
+                color: white;
+                border: 1px solid rgba(255, 255, 255, 0.4);
+                border-radius: 11px;
+                font-weight: bold;
+                font-size: 16px;
+                padding-bottom: 2px;
+            }
+            QToolButton:hover {
+                background-color: rgba(248, 113, 113, 1);
+                border: 1px solid rgba(255, 255, 255, 0.6);
+            }
+            QToolButton:pressed {
+                background-color: rgba(220, 38, 38, 1);
+            }
+        """)
+        self.delete_btn.clicked.connect(lambda: self.delete_requested.emit(self.asset_id))
+        self.delete_btn.raise_()  # Ensure button is on top
+
+        layout.addWidget(self.thumb_container)
+
+        # Name label
+        name_label = QLabel(name)
+        name_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        name_label.setStyleSheet("color: #e5e5e5; font-size: 11px;")
+        name_label.setWordWrap(True)
+        name_label.setMaximumHeight(30)
+        layout.addWidget(name_label)
+
+        self._position_delete_button()
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        self._position_delete_button()
+
+    def _position_delete_button(self):
+        """Place delete button at top-right over the thumbnail."""
+        if not hasattr(self, "thumb_container"):
+            return
+        margin = 3
+        x = self.thumb_container.width() - self.delete_btn.width() - margin
+        y = margin
+        x = max(0, x)
+        self.delete_btn.move(x, y)
+        self.delete_btn.raise_()  # Keep button on top layer
+
 
 class DraggableListWidget(QListWidget):
     def startDrag(self, supportedActions):
@@ -46,6 +131,7 @@ class MediaPool(QWidget):
         self.setObjectName("panel") # Keep original object name for styling if needed
         self.setAcceptDrops(True) # Keep original drag/drop functionality
         self.setup_ui()
+        self.items_by_id = {}
         
         # Connect to State Manager (Keep original connection)
         state_manager.media_imported.connect(self.on_asset_imported)
@@ -132,6 +218,12 @@ class MediaPool(QWidget):
 
     def dropEvent(self, event: QDropEvent):
         self.setStyleSheet("#panel { border: none; }")
+
+        # Ignore drops that originate from within the media list itself to avoid duplicates
+        if event.source() is self.asset_list:
+            event.ignore()
+            return
+
         files = [u.toLocalFile() for u in event.mimeData().urls()]
         files = [f for f in files if f] # Filter empty
         
@@ -139,8 +231,14 @@ class MediaPool(QWidget):
             self.import_media(files)
             
     def import_media(self, file_paths):
+        # Skip files already in the media pool to prevent duplicates
+        existing_paths = {a["target_url"] for a in state_manager.get_assets()}
+        new_files = [p for p in file_paths if p not in existing_paths]
+        if not new_files:
+            return
+
         # Start Ingestion Thread
-        self.thread = IngestionThread(file_paths)
+        self.thread = IngestionThread(new_files)
         self.thread.asset_processed.connect(self.handle_processed_asset)
         self.thread.start()
         
@@ -163,9 +261,16 @@ class MediaPool(QWidget):
             pixmap = QPixmap(100, 80) # Updated size to match iconSize
             pixmap.fill(QColor("#27272a")) # Use QColor for fill
             item.setIcon(QIcon(pixmap))
-            
+
+        # Attach custom widget with delete button
+        widget = AssetItemWidget(asset["id"], asset["name"], item.icon())
+        widget.delete_requested.connect(self.remove_asset)
+        item.setSizeHint(widget.sizeHint())
+
         self.asset_list.addItem(item)
-        
+        self.asset_list.setItemWidget(item, widget)
+        self.items_by_id[asset["id"]] = item
+
         # Re-apply filter
         self.filter_assets()
 
@@ -179,6 +284,16 @@ class MediaPool(QWidget):
             
             if not asset:
                 continue
-                
+            
             name_match = search_text in asset["name"].lower()
             item.setHidden(not name_match)
+
+    def remove_asset(self, asset_id: str):
+        """
+        Remove asset from state and list view.
+        """
+        state_manager.remove_asset(asset_id)
+        item = self.items_by_id.pop(asset_id, None)
+        if item:
+            row = self.asset_list.row(item)
+            self.asset_list.takeItem(row)
