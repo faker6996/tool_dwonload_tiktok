@@ -94,3 +94,46 @@ class IngestionThread(QThread):
             if asset:
                 self.asset_processed.emit(asset)
         self.finished.emit()
+
+
+class ChannelScraperThread(QThread):
+    """Thread for scraping channel videos in background."""
+    
+    progress = pyqtSignal(str, int)  # status_text, count
+    finished = pyqtSignal(list)  # list of video dicts
+    error = pyqtSignal(str)
+    
+    def __init__(self, channel_url: str, max_videos: int = 50, days_filter: int = None):
+        super().__init__()
+        self.channel_url = channel_url
+        self.max_videos = max_videos
+        self.days_filter = days_filter
+    
+    def run(self):
+        try:
+            import asyncio
+            from src.core.channel_scraper import channel_scraper
+            
+            def progress_callback(status: str, count: int):
+                self.progress.emit(status, count)
+            
+            # Run async scraper in new event loop
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            
+            try:
+                videos = loop.run_until_complete(
+                    channel_scraper.scrape_channel(
+                        self.channel_url,
+                        self.max_videos,
+                        self.days_filter,
+                        progress_callback
+                    )
+                )
+                self.finished.emit(videos)
+            finally:
+                loop.close()
+                
+        except Exception as e:
+            self.error.emit(str(e))
+

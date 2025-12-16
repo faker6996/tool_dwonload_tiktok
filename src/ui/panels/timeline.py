@@ -379,17 +379,20 @@ class Timeline(QFrame):
             self._progress_dialog.close()
     
     def _load_new_video_to_player_and_media(self, video_path: str):
-        """Load the new (no-sub) video into player, media panel, and update timeline."""
+        """Load the new (no-sub) video into player and update timeline (replace, not add)."""
         try:
-            # Update timeline clip to use new video
+            # Update timeline clip to use new video - REPLACE not ADD
             track = self.timeline_widget.main_track
             if track.clips:
-                track.clips[0].asset_id = video_path
-                track.clips[0].name = os.path.basename(video_path)
-                self.timeline_widget.refresh_tracks()  # Correct method name
+                clip = track.clips[0]
+                clip.asset_id = video_path
+                clip.name = os.path.basename(video_path)
+                # Reset start_time to 0 so subtitles align correctly
+                clip.start_time = 0.0
+                self.timeline_widget.refresh_tracks()
                 print(f"✅ Updated timeline clip to: {os.path.basename(video_path)}")
             
-            # Find parent edit_page to access player and media panel
+            # Find parent edit_page to access player
             parent = self.parent()
             while parent:
                 # Load video into player
@@ -397,12 +400,6 @@ class Timeline(QFrame):
                     if hasattr(parent.player, 'load_clip_from_path'):
                         parent.player.load_clip_from_path(video_path)
                         print(f"✅ Loaded new video into player: {os.path.basename(video_path)}")
-                
-                # Add to media panel
-                if hasattr(parent, 'media_panel'):
-                    if hasattr(parent.media_panel, 'import_media'):
-                        parent.media_panel.import_media([video_path])
-                        print(f"✅ Added video to media panel: {os.path.basename(video_path)}")
                     break
                 
                 parent = parent.parent()
@@ -428,6 +425,27 @@ class Timeline(QFrame):
                 parent = parent.parent()
         except Exception as e:
             print(f"Error updating player subtitles: {e}")
+    
+    def _notify_player_tts_status(self):
+        """Check if TTS tracks exist and notify player to adjust volume."""
+        try:
+            # Check if AI Voiceover track has clips
+            has_tts = False
+            for track in self.timeline_widget.tracks:
+                if track.name == "AI Voiceover" and track.clips:
+                    has_tts = True
+                    break
+            
+            # Find parent edit_page to access player
+            parent = self.parent()
+            while parent:
+                if hasattr(parent, 'player'):
+                    if hasattr(parent.player, 'set_tts_tracks'):
+                        parent.player.set_tts_tracks(has_tts)
+                    break
+                parent = parent.parent()
+        except Exception as e:
+            print(f"Error notifying player about TTS: {e}")
     
     def _on_transcription_error(self, error: str):
         if self._progress_dialog:
@@ -631,6 +649,9 @@ class Timeline(QFrame):
         
         self.timeline_widget.refresh_tracks()
         
+        # Notify player to reduce video audio (TTS is present)
+        self._notify_player_tts_status()
+        
         # Show success message
         from PyQt6.QtWidgets import QMessageBox
         QMessageBox.information(
@@ -638,7 +659,8 @@ class Timeline(QFrame):
             "Text to Speech", 
             f"✅ Đã tạo audio thành công!\n\n"
             f"⏱ Duration: {duration:.1f} giây\n"
-            f"📍 Xem kết quả: Track 'AI Voiceover' trong Timeline"
+            f"📍 Xem kết quả: Track 'AI Voiceover' trong Timeline\n"
+            f"🔊 Volume video đã giảm 50% (vì có TTS)"
         )
     
     def _on_tts_progress(self, status: str):

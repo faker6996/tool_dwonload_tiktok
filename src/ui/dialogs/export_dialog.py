@@ -204,6 +204,27 @@ class ExportDialog(QDialog):
         except Exception as e:
             print(f"Error collecting subtitles: {e}")
 
+        # Collect AI Voiceover/TTS audio tracks
+        audio_tracks_data = []
+        try:
+            if parent and hasattr(parent, "timeline"):
+                timeline_panel = parent.timeline
+                if hasattr(timeline_panel, "timeline_widget"):
+                    timeline_widget = timeline_panel.timeline_widget
+                    # Find AI Voiceover track
+                    for track in timeline_widget.tracks:
+                        if track.name == "AI Voiceover":
+                            for clip in track.clips:
+                                audio_tracks_data.append({
+                                    "path": clip.asset_id,
+                                    "start_time": clip.start_time,
+                                    "duration": clip.length,
+                                })
+                            print(f"Collected {len(audio_tracks_data)} audio tracks for mixing")
+                            break
+        except Exception as e:
+            print(f"Error collecting audio tracks: {e}")
+
         # Extract just resolution numbers (e.g. "1080x1920 (TikTok/Reels)" -> "1080x1920")
         resolution_text = self.res_combo.currentText()
         resolution = resolution_text.split(" ")[0]  # Get "1080x1920" from "1080x1920 (TikTok/Reels)"
@@ -226,8 +247,8 @@ class ExportDialog(QDialog):
         import time
         self._export_start_time = time.time()
         
-        # Start Render (with stickers and subtitles)
-        render_engine.render_timeline(timeline_clips, output_path, settings, stickers_data, subtitles_data)
+        # Start Render (with stickers, subtitles, and audio tracks)
+        render_engine.render_timeline(timeline_clips, output_path, settings, stickers_data, subtitles_data, audio_tracks_data)
 
     def update_progress(self, value):
         self.progress_bar.setValue(value)

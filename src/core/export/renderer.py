@@ -50,23 +50,27 @@ class RenderEngine(QObject):
         }
 
 
-    def render_timeline(self, timeline_clips: List[Dict], output_path: str, settings: Dict, stickers: List[Dict] = None, subtitles: List[Dict] = None):
+    def render_timeline(self, timeline_clips: List[Dict], output_path: str, settings: Dict, stickers: List[Dict] = None, subtitles: List[Dict] = None, audio_tracks: List[Dict] = None):
         """
         Render the timeline to a video file.
         timeline_clips: List of clip data (path, start, duration, etc.)
         stickers: List of sticker data to overlay (content, x, y, scale, rotation)
         subtitles: List of subtitle clips (start_time, duration, text_content)
+        audio_tracks: List of audio clips to mix (path, start_time, duration)
         """
         self.output_path = output_path
         self.settings.update(settings)
         self.stickers = stickers or []
         self.subtitles = subtitles or []
+        self.audio_tracks = audio_tracks or []
         
         print(f"Starting render to {output_path} with settings {self.settings}")
         if self.stickers:
             print(f"Rendering {len(self.stickers)} stickers")
         if self.subtitles:
             print(f"Burning {len(self.subtitles)} subtitles into video")
+        if self.audio_tracks:
+            print(f"Mixing {len(self.audio_tracks)} audio tracks (TTS/voiceover)")
 
         if not timeline_clips:
             self.render_finished.emit(False, "No clips to render.")
@@ -252,25 +256,83 @@ class RenderEngine(QObject):
             except Exception as e:
                 print(f"Error creating subtitles: {e}")
         
-        # Apply video filters (subtitles only, stickers use separate overlay)
-        if video_filters:
-            cmd.extend(["-vf", ",".join(video_filters)])
+        # Build audio mixing if we have TTS/audio tracks
+        audio_tracks_list = getattr(self, "audio_tracks", [])
+        audio_inputs = []
+        audio_filter = ""
         
-        # Add overlay filter if we have stickers (separate filter_complex)
-        if overlay_filter:
-            cmd.extend(["-filter_complex", overlay_filter])
+        if audio_tracks_list:
+            # Add each audio file as input
+            for idx, audio in enumerate(audio_tracks_list):
+                audio_path = audio.get("path", "")
+                if audio_path and os.path.exists(audio_path):
+                    audio_inputs.extend(["-i", audio_path])
+            
+            if audio_inputs:
+                # Build amix filter: reduce original audio 50%, mix with TTS tracks
+                num_audio = len(audio_tracks_list) + 1  # +1 for original video audio
+                # Reduce original video audio to 50% volume before mixing
+                audio_filter = f"[0:a]volume=0.5[orig];"
+                audio_filter += f"[orig]"
+                for i in range(len(audio_tracks_list)):
+                    # TTS audio is input index 1, 2, etc. (after concat input 0)
+                    audio_filter += f"[{i + 1}:a]"
+                audio_filter += f"amix=inputs={num_audio}:duration=longest[aout]"
+                print(f"Audio mix filter (original reduced 50%): {audio_filter}")
+        
+        # Add audio inputs after video input (before other options)
+        cmd[8:8] = audio_inputs  # Insert after concat input
+        
+        cmd.extend([
+            "-r",
+            str(fps),
+            "-s",
+            resolution,
+        ])
+        
+        # Decide on filter strategy: use filter_complex if we have audio mixing,
+        # otherwise use simple -vf for video filters
+        if audio_filter:
+            # Use filter_complex for both video and audio filters
+            full_filter = ""
+            
+            # Add video filters (subtitles) - need to output to [vout]
+            if video_filters:
+                full_filter = f"[0:v]{','.join(video_filters)}[vout];"
+            
+            # Add audio filter
+            full_filter += audio_filter
+            
+            cmd.extend(["-filter_complex", full_filter])
+            
+            # Map outputs
+            if video_filters:
+                cmd.extend(["-map", "[vout]"])
+            else:
+                cmd.extend(["-map", "0:v"])
+            cmd.extend(["-map", "[aout]"])
+            
+            # Audio codec for mixed audio
+            cmd.extend(["-c:a", "aac", "-b:a", "192k"])
+        else:
+            # No audio mixing - use simple -vf for video filters
+            if video_filters:
+                cmd.extend(["-vf", ",".join(video_filters)])
+            
+            # Add overlay filter if we have stickers (separate filter_complex)
+            if overlay_filter:
+                cmd.extend(["-filter_complex", overlay_filter])
+            
+            # Original audio passthrough
+            cmd.extend(["-c:a", "aac", "-b:a", "192k"])
         
         cmd.extend([
             "-c:v",
             "libx264",
             "-preset",
-            "fast",  # Use fast preset for quicker encoding
+            "fast",
             "-crf",
-            "23",  # Good quality/speed balance
-            "-c:a",
-            "aac",
-            "-b:a",
-            "192k",
+            "23",
             "-pix_fmt",
             "yuv420p",
             "-movflags",

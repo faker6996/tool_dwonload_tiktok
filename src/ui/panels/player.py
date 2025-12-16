@@ -1167,6 +1167,29 @@ class Player(QFrame):
         """
         self._subtitle_clips = subtitle_clips
         print(f"Player: Set {len(subtitle_clips)} subtitle clips for display")
+        
+        # Immediately update subtitle display at current position
+        if subtitle_clips:
+            current_pos = self.media_player.position()
+            timeline_time = (current_pos / 1000.0) + float(self.timeline_offset or 0.0)
+            self.update_subtitle_display(timeline_time)
+    
+    def set_tts_tracks(self, has_tts: bool):
+        """
+        Set whether TTS tracks are present. When TTS is active, reduce video audio to 50%.
+        """
+        self._has_tts = has_tts
+        if hasattr(self, 'audio_output'):
+            if has_tts:
+                # Reduce video audio to 50% when TTS is present
+                base_volume = getattr(self.current_clip, 'volume', 1.0) if self.current_clip else 1.0
+                self.audio_output.setVolume(base_volume * 0.5)
+                print("Player: TTS detected - video audio reduced to 50%")
+            else:
+                # Restore normal volume
+                if self.current_clip:
+                    self.audio_output.setVolume(self.current_clip.volume)
+                print("Player: No TTS - video audio at normal volume")
     
     def update_subtitle_display(self, timeline_time: float):
         """
