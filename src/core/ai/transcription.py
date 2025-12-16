@@ -8,10 +8,27 @@ class TranscriptionService:
         self.model_name = "base"  # Options: tiny, base, small, medium, large
         self.use_mlx = False  # Will be set to True if MLX is available
         self._mlx_model = None
+        
+        # OpenAI Whisper API support
+        self.use_openai_api = False  # If True, use cloud API instead of local
+        self._openai_api_key = None
 
     def _is_apple_silicon(self) -> bool:
         """Check if running on Apple Silicon Mac."""
         return platform.system() == "Darwin" and platform.machine() == "arm64"
+    
+    def set_openai_api_key(self, api_key: str):
+        """Set OpenAI API key for cloud Whisper."""
+        self._openai_api_key = api_key
+        print(f"✅ OpenAI Whisper API key set")
+    
+    def set_use_openai_api(self, use_api: bool):
+        """Toggle between local Whisper and OpenAI API."""
+        self.use_openai_api = use_api
+        if use_api:
+            print("☁️ Whisper mode: OpenAI API")
+        else:
+            print("💻 Whisper mode: Local")
 
     def load_model(self):
         """Load Whisper model - prioritize MLX on Apple Silicon."""
@@ -106,6 +123,10 @@ class TranscriptionService:
         processed_file = self._preprocess_audio(file_path)
         
         try:
+            # Use OpenAI API if enabled
+            if self.use_openai_api and self._openai_api_key:
+                return self._transcribe_openai(processed_file, language)
+            
             # Use MLX Whisper if available
             if self.use_mlx:
                 return self._transcribe_mlx(processed_file, language)
@@ -162,6 +183,69 @@ class TranscriptionService:
         
         print(f"✅ MLX Transcription complete! Found {len(segments)} segments.")
         return segments
+    
+    def _transcribe_openai(self, file_path: str, language: str = None) -> List[Dict[str, Any]]:
+        """Transcribe using OpenAI Whisper API (cloud)."""
+        import httpx
+        import json
+        
+        print("☁️ Transcribing with OpenAI Whisper API...")
+        
+        # OpenAI Whisper API endpoint
+        url = "https://api.openai.com/v1/audio/transcriptions"
+        headers = {
+            "Authorization": f"Bearer {self._openai_api_key}"
+        }
+        
+        # Prepare form data
+        data = {
+            "model": "whisper-1",
+            "response_format": "verbose_json",
+            "timestamp_granularities[]": "segment"
+        }
+        if language:
+            data["language"] = language
+        
+        try:
+            # Check file size (OpenAI limit: 25MB)
+            file_size = os.path.getsize(file_path)
+            if file_size > 25 * 1024 * 1024:
+                print(f"⚠️ File too large ({file_size / 1024 / 1024:.1f}MB). OpenAI limit is 25MB.")
+                print("⚠️ Falling back to local Whisper...")
+                self.use_openai_api = False
+                return self.transcribe(file_path, language)
+            
+            with open(file_path, "rb") as f:
+                files = {"file": (os.path.basename(file_path), f, "audio/wav")}
+                
+                with httpx.Client(timeout=300.0) as client:
+                    response = client.post(url, headers=headers, data=data, files=files)
+                
+                if response.status_code != 200:
+                    error_msg = response.json().get("error", {}).get("message", response.text)
+                    print(f"❌ OpenAI API error: {error_msg}")
+                    print("⚠️ Falling back to local Whisper...")
+                    self.use_openai_api = False
+                    return self.transcribe(file_path, language)
+                
+                result = response.json()
+            
+            segments = []
+            for seg in result.get("segments", []):
+                segments.append({
+                    "start": seg["start"],
+                    "end": seg["end"],
+                    "text": seg["text"].strip()
+                })
+            
+            print(f"✅ OpenAI Transcription complete! Found {len(segments)} segments.")
+            return segments
+            
+        except Exception as e:
+            print(f"❌ OpenAI Whisper error: {e}")
+            print("⚠️ Falling back to local Whisper...")
+            self.use_openai_api = False
+            return self.transcribe(file_path, language)
 
     def transcribe_and_translate(self, file_path: str, target_language: str = "vi") -> List[Dict[str, Any]]:
         """

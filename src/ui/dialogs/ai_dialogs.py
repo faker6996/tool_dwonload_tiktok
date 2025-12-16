@@ -122,6 +122,38 @@ class CaptionDialog(QDialog):
         self.provider_group.hide()  # Hidden by default
         layout.addWidget(self.provider_group)
         
+        # Whisper Provider Selection (Local vs OpenAI API)
+        self.whisper_group = QGroupBox("🎯 Whisper Engine")
+        whisper_layout = QVBoxLayout(self.whisper_group)
+        
+        whisper_row = QHBoxLayout()
+        whisper_row.addWidget(QLabel("Engine:"))
+        self.whisper_engine_combo = QComboBox()
+        self.whisper_engine_combo.addItems([
+            "💻 Local (MLX/CPU - Miễn phí)",
+            "☁️ OpenAI API (Nhanh, $0.006/phút)",
+        ])
+        self.whisper_engine_combo.currentIndexChanged.connect(self.on_whisper_engine_changed)
+        whisper_row.addWidget(self.whisper_engine_combo)
+        whisper_row.addStretch()
+        whisper_layout.addLayout(whisper_row)
+        
+        # OpenAI API key for Whisper (reuse from settings if available)
+        self.whisper_api_row = QHBoxLayout()
+        self.whisper_api_row.addWidget(QLabel("API Key:"))
+        self.whisper_api_input = QLineEdit()
+        self.whisper_api_input.setPlaceholderText("Nhập OpenAI API Key...")
+        self.whisper_api_input.setEchoMode(QLineEdit.EchoMode.Password)
+        
+        # Pre-fill from config if available
+        self._load_saved_whisper_key()
+        
+        self.whisper_api_row.addWidget(self.whisper_api_input)
+        whisper_layout.addLayout(self.whisper_api_row)
+        self.whisper_api_input.hide()  # Hidden by default (Local mode)
+        
+        layout.addWidget(self.whisper_group)
+        
         # Remove Sub Settings Group (hidden by default)
         self.remove_group = QGroupBox("🗑️ Cài đặt xoá subtitle")
         remove_layout = QVBoxLayout(self.remove_group)
@@ -230,8 +262,48 @@ class CaptionDialog(QDialog):
         else:
             self.api_key_input.hide()
     
+    def on_whisper_engine_changed(self, index):
+        """Show/hide OpenAI API key input based on Whisper engine selection."""
+        if index == 1:  # OpenAI API
+            self.whisper_api_input.show()
+        else:
+            self.whisper_api_input.hide()
+    
+    def _load_saved_whisper_key(self):
+        """Load OpenAI API key from saved config."""
+        import os
+        import json
+        config_path = os.path.expanduser("~/.tiktok_downloader_config.json")
+        try:
+            if os.path.exists(config_path):
+                with open(config_path, "r") as f:
+                    config = json.load(f)
+                    api_key = config.get("openai_api_key", "")
+                    if api_key:
+                        self.whisper_api_input.setText(api_key)
+        except:
+            pass
+    
     def accept_with_settings(self):
         mode_index = self.mode_combo.currentIndex()
+        
+        # Configure Whisper engine (Local vs OpenAI API)
+        whisper_engine = self.whisper_engine_combo.currentIndex()
+        self.result_use_openai_whisper = (whisper_engine == 1)
+        
+        if self.result_use_openai_whisper:
+            from src.core.ai.transcription import transcription_service
+            api_key = self.whisper_api_input.text().strip()
+            if api_key:
+                transcription_service.set_openai_api_key(api_key)
+                transcription_service.set_use_openai_api(True)
+            else:
+                # No API key, fallback to local
+                self.result_use_openai_whisper = False
+                transcription_service.set_use_openai_api(False)
+        else:
+            from src.core.ai.transcription import transcription_service
+            transcription_service.set_use_openai_api(False)
         
         # Configure translation provider for translate mode
         if mode_index == 1:  # Translate mode
@@ -293,6 +365,10 @@ class CaptionDialog(QDialog):
     
     def get_remove_settings(self):
         return self.result_remove_settings
+    
+    def get_use_openai_whisper(self) -> bool:
+        """Return whether user selected OpenAI Whisper API."""
+        return getattr(self, 'result_use_openai_whisper', False)
 
 
 class TTSDialog(QDialog):
@@ -301,9 +377,10 @@ class TTSDialog(QDialog):
     def __init__(self, parent=None, initial_text: str = ""):
         super().__init__(parent)
         self.setWindowTitle("🎤 Text to Speech")
-        self.setFixedSize(500, 400)
+        self.setFixedSize(500, 450)  # Slightly taller for new checkbox
         self.result_text = None
         self.result_voice = None
+        self.result_sync_subtitles = False  # Whether to sync back to subtitles
         self._initial_text = initial_text
         self.setup_ui()
     
@@ -349,6 +426,16 @@ class TTSDialog(QDialog):
         
         layout.addWidget(text_group)
         
+        # Sync subtitles checkbox - only show if there's initial text (from subtitles)
+        from PyQt6.QtWidgets import QCheckBox
+        self.sync_checkbox = QCheckBox("📝 Cập nhật cả subtitle trên timeline")
+        self.sync_checkbox.setToolTip("Khi bật, text đã chỉnh sửa sẽ được cập nhật lại vào subtitle track")
+        self.sync_checkbox.setChecked(True)  # Default: sync back
+        if self._initial_text:
+            layout.addWidget(self.sync_checkbox)
+        else:
+            self.sync_checkbox.hide()
+        
         # Info
         info = QLabel("💡 Sử dụng Microsoft Edge TTS - chất lượng cao, miễn phí")
         info.setStyleSheet("color: #a1a1aa; font-size: 11px;")
@@ -388,6 +475,7 @@ class TTSDialog(QDialog):
         
         self.result_text = text
         self.result_voice = voice_map.get(self.voice_combo.currentIndex(), "vi-VN-HoaiMyNeural")
+        self.result_sync_subtitles = self.sync_checkbox.isChecked() if self._initial_text else False
         self.accept()
     
     def get_text(self):
@@ -395,3 +483,7 @@ class TTSDialog(QDialog):
     
     def get_voice(self):
         return self.result_voice
+    
+    def should_sync_subtitles(self) -> bool:
+        """Return whether user wants to sync edited text back to subtitles."""
+        return self.result_sync_subtitles

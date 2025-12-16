@@ -126,10 +126,13 @@ class GeminiProProvider(TranslationProvider):
             }
             target_name = lang_names.get(target_lang, target_lang)
             
-            prompt = f"""Translate to {target_name}. Only return the translation:
+            prompt = f"""Translate to {target_name}. Output ONLY the translation, no explanations:
 {text}"""
             
-            response = model.generate_content(prompt)
+            response = model.generate_content(
+                prompt,
+                generation_config={"max_output_tokens": 500}  # Limit output
+            )
             return response.text.strip() or text
             
         except Exception as e:
@@ -160,12 +163,20 @@ class GeminiProProvider(TranslationProvider):
             # Format texts with numbers for batch processing
             numbered_texts = "\n".join([f"{i+1}. {t}" for i, t in enumerate(texts)])
             
-            prompt = f"""Translate each line to {target_name}. 
-Keep the same numbering format. Only return translations, no explanations.
+            prompt = f"""Translate to {target_name}. Rules:
+- Return ONLY translations
+- Keep same number format (1. 2. 3.)
+- No explanations or notes
 
 {numbered_texts}"""
             
-            response = model.generate_content(prompt)
+            # Estimate max tokens: ~2x input for translation + some buffer
+            max_tokens = min(4000, len(numbered_texts) * 3)
+            
+            response = model.generate_content(
+                prompt,
+                generation_config={"max_output_tokens": max_tokens}
+            )
             result_text = response.text.strip()
             
             # Parse numbered results
@@ -247,9 +258,10 @@ class OpenAIProvider(TranslationProvider):
             response = client.chat.completions.create(
                 model=self.model,
                 messages=[
-                    {"role": "system", "content": f"Translate to {target_name}. Return only the translation."},
+                    {"role": "system", "content": f"You are a translator. Translate to {target_name}. Output ONLY the translation, nothing else."},
                     {"role": "user", "content": text}
-                ]
+                ],
+                max_tokens=500  # Limit output tokens
             )
             return response.choices[0].message.content.strip() or text
             
@@ -279,12 +291,17 @@ class OpenAIProvider(TranslationProvider):
             # Format texts with numbers
             numbered_texts = "\n".join([f"{i+1}. {t}" for i, t in enumerate(texts)])
             
+            # Estimate max tokens: roughly 2-3x input for translations
+            estimated_tokens = len(numbered_texts.split()) * 3
+            max_tokens = min(4000, max(500, estimated_tokens))
+            
             response = client.chat.completions.create(
                 model=self.model,
                 messages=[
-                    {"role": "system", "content": f"Translate each numbered line to {target_name}. Keep numbering. Return only translations."},
+                    {"role": "system", "content": f"You are a translator. Translate each numbered line to {target_name}. Rules:\n- Keep numbering (1. 2. 3.)\n- Output ONLY translations\n- No explanations or notes"},
                     {"role": "user", "content": numbered_texts}
-                ]
+                ],
+                max_tokens=max_tokens
             )
             
             result_text = response.choices[0].message.content.strip()

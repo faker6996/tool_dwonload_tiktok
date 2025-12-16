@@ -511,6 +511,10 @@ class Timeline(QFrame):
             voice = dialog.get_voice()
             
             if text:
+                # Check if user wants to sync edited text back to subtitles
+                if dialog.should_sync_subtitles():
+                    self._sync_text_to_subtitles(text)
+                
                 self.start_tts(text, voice)
     
     def _get_subtitle_text_from_timeline(self) -> str:
@@ -526,6 +530,34 @@ class Timeline(QFrame):
                         subtitle_texts.append(clip.name)
         
         return "\n".join(subtitle_texts) if subtitle_texts else ""
+    
+    def _sync_text_to_subtitles(self, edited_text: str):
+        """Sync edited text from TTS dialog back to subtitle clips on timeline.
+        
+        Each line in edited_text corresponds to a subtitle clip in order.
+        """
+        lines = edited_text.strip().split('\n')
+        line_idx = 0
+        
+        for track in self.timeline_widget.tracks:
+            if track.name == "Subtitles":
+                for clip in track.clips:
+                    if line_idx < len(lines):
+                        new_text = lines[line_idx].strip()
+                        # Update clip text content
+                        if hasattr(clip, 'text_content'):
+                            clip.text_content = new_text
+                        clip.name = new_text
+                        line_idx += 1
+                
+                # Refresh track UI
+                self.timeline_widget.refresh_tracks()
+                
+                # Update player subtitles
+                self._update_player_subtitles()
+                
+                print(f"✅ Synced {line_idx} subtitle clips with edited text")
+                break
     
     def start_tts(self, text: str, voice: str):
         """Start TTS generation using queue system (non-blocking)."""
