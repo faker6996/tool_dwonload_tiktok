@@ -5,9 +5,8 @@ from typing import List, Dict, Any, Optional
 class TranscriptionService:
     def __init__(self):
         self.model = None
-        self.model_name = "base"  # Options: tiny, base, small, medium, large
+        self.model_name = "small"  # Options: tiny, base, small, medium, large (small is good for Chinese)
         self.use_mlx = False  # Will be set to True if MLX is available
-        self._mlx_model = None
         
         # OpenAI Whisper API support
         self.use_openai_api = False  # If True, use cloud API instead of local
@@ -54,18 +53,20 @@ class TranscriptionService:
 
     def _preprocess_audio(self, file_path: str) -> str:
         """
-        Preprocess audio by converting to WAV format.
+        Preprocess audio by converting to WAV format for local Whisper.
         This fixes issues with certain audio codecs that cause NaN errors in Whisper.
         """
         import subprocess
         import tempfile
         import hashlib
         
-        # Create temp file path
-        file_hash = hashlib.md5(file_path.encode()).hexdigest()[:8]
+        # Create cache key based on path + mtime + size (not just path)
+        st = os.stat(file_path)
+        cache_key = f"{file_path}:{st.st_mtime}:{st.st_size}"
+        file_hash = hashlib.md5(cache_key.encode()).hexdigest()[:8]
         temp_wav = os.path.join(tempfile.gettempdir(), f"whisper_audio_{file_hash}.wav")
         
-        # If already preprocessed, return cached file
+        # If already preprocessed with same file, return cached
         if os.path.exists(temp_wav):
             return temp_wav
         
@@ -100,6 +101,51 @@ class TranscriptionService:
         except Exception as e:
             print(f"⚠️ FFmpeg preprocessing error: {e}")
             return file_path
+    
+    def _preprocess_audio_for_openai(self, file_path: str) -> str:
+        """
+        Preprocess audio to MP3 for OpenAI API (much smaller than WAV).
+        OpenAI limit is 25MB - MP3 is ~10x smaller than WAV.
+        """
+        import subprocess
+        import tempfile
+        import hashlib
+        
+        st = os.stat(file_path)
+        cache_key = f"openai:{file_path}:{st.st_mtime}:{st.st_size}"
+        file_hash = hashlib.md5(cache_key.encode()).hexdigest()[:8]
+        temp_mp3 = os.path.join(tempfile.gettempdir(), f"whisper_openai_{file_hash}.mp3")
+        
+        if os.path.exists(temp_mp3):
+            return temp_mp3
+        
+        print("🔊 Preprocessing audio for OpenAI API (mp3)...")
+        
+        try:
+            cmd = [
+                "ffmpeg", "-y",
+                "-i", file_path,
+                "-vn",
+                "-acodec", "libmp3lame",
+                "-ar", "16000",
+                "-ac", "1",
+                "-b:a", "64k",  # Low bitrate for small file
+                temp_mp3
+            ]
+            
+            subprocess.run(cmd, capture_output=True, text=True, timeout=300)
+            
+            if os.path.exists(temp_mp3) and os.path.getsize(temp_mp3) > 1000:
+                size_mb = os.path.getsize(temp_mp3) / 1024 / 1024
+                print(f"✅ Audio preprocessed for OpenAI: {size_mb:.1f}MB")
+                return temp_mp3
+            else:
+                print("⚠️ MP3 preprocessing failed, using original")
+                return file_path
+                
+        except Exception as e:
+            print(f"⚠️ FFmpeg error: {e}")
+            return file_path
 
     def transcribe(self, file_path: str, language: str = None) -> List[Dict[str, Any]]:
         """
@@ -119,17 +165,25 @@ class TranscriptionService:
 
         print(f"Transcribing {file_path}...")
         
-        # Preprocess audio to fix codec issues
-        processed_file = self._preprocess_audio(file_path)
+        # Keep original for fallback
+        original_file = file_path
         
         try:
-            # Use OpenAI API if enabled
+            # Use OpenAI API if enabled - preprocess to mp3 (smaller)
             if self.use_openai_api and self._openai_api_key:
-                return self._transcribe_openai(processed_file, language)
+                processed_mp3 = self._preprocess_audio_for_openai(original_file)
+                result = self._transcribe_openai(processed_mp3, language)
+                if result:
+                    return result
+                # Fallback to local - continue below
+                print("⚠️ OpenAI failed, falling back to local Whisper...")
+            
+            # Local Whisper - preprocess to WAV
+            processed_wav = self._preprocess_audio(original_file)
             
             # Use MLX Whisper if available
             if self.use_mlx:
-                return self._transcribe_mlx(processed_file, language)
+                return self._transcribe_mlx(processed_wav, language)
             
             # Standard Whisper
             print("This may take several minutes depending on video length...")
@@ -137,7 +191,7 @@ class TranscriptionService:
             if language:
                 options["language"] = language
             
-            result = self.model.transcribe(processed_file, **options)
+            result = self.model.transcribe(processed_wav, **options)
             
             segments = []
             for seg in result.get("segments", []):
@@ -163,9 +217,15 @@ class TranscriptionService:
         # MLX Whisper model path format
         model_path = f"mlx-community/whisper-{self.model_name}-mlx"
         
-        options = {}
+        options = {
+            "word_timestamps": True,  # Better segmentation
+            "condition_on_previous_text": True,  # Helps with context
+        }
         if language:
             options["language"] = language
+        else:
+            # For auto-detect, hint that it might be Chinese
+            options["language"] = None  # Let Whisper detect
         
         result = mlx_whisper.transcribe(
             file_path,
@@ -201,7 +261,9 @@ class TranscriptionService:
         data = {
             "model": "whisper-1",
             "response_format": "verbose_json",
-            "timestamp_granularities[]": "segment"
+            "timestamp_granularities[]": "segment",
+            "temperature": 0,  # Deterministic output (integer, not string)
+            "prompt": "Transcribe spoken dialogue only. Ignore singing, lyrics, and background music."
         }
         if language:
             data["language"] = language
@@ -211,12 +273,15 @@ class TranscriptionService:
             file_size = os.path.getsize(file_path)
             if file_size > 25 * 1024 * 1024:
                 print(f"⚠️ File too large ({file_size / 1024 / 1024:.1f}MB). OpenAI limit is 25MB.")
-                print("⚠️ Falling back to local Whisper...")
-                self.use_openai_api = False
-                return self.transcribe(file_path, language)
+                return []  # Return empty, caller will fallback to local
+            
+            # Auto-detect content type based on extension
+            ext = os.path.splitext(file_path)[1].lower()
+            content_types = {".mp3": "audio/mpeg", ".wav": "audio/wav", ".m4a": "audio/mp4"}
+            content_type = content_types.get(ext, "audio/mpeg")
             
             with open(file_path, "rb") as f:
-                files = {"file": (os.path.basename(file_path), f, "audio/wav")}
+                files = {"file": (os.path.basename(file_path), f, content_type)}
                 
                 with httpx.Client(timeout=300.0) as client:
                     response = client.post(url, headers=headers, data=data, files=files)
@@ -224,9 +289,7 @@ class TranscriptionService:
                 if response.status_code != 200:
                     error_msg = response.json().get("error", {}).get("message", response.text)
                     print(f"❌ OpenAI API error: {error_msg}")
-                    print("⚠️ Falling back to local Whisper...")
-                    self.use_openai_api = False
-                    return self.transcribe(file_path, language)
+                    return []  # Return empty, caller will fallback
                 
                 result = response.json()
             
@@ -243,9 +306,7 @@ class TranscriptionService:
             
         except Exception as e:
             print(f"❌ OpenAI Whisper error: {e}")
-            print("⚠️ Falling back to local Whisper...")
-            self.use_openai_api = False
-            return self.transcribe(file_path, language)
+            return []  # Return empty, caller will fallback to local
 
     def transcribe_and_translate(self, file_path: str, target_language: str = "vi") -> List[Dict[str, Any]]:
         """
@@ -266,9 +327,9 @@ class TranscriptionService:
         if not segments:
             return []
         
-        # If target is English, use Whisper's built-in translation
-        if target_language == "en":
-            return self._transcribe_to_english(file_path)
+        # NOTE: Removed special case for English (target_language == "en")
+        # because it crashes on MLX mode (self.model is None)
+        # Now we use translation_service for ALL languages including English
         
         # Use TranslationService for translation
         from .translation import translation_service
@@ -284,11 +345,38 @@ class TranscriptionService:
             # Filter out empty segments and track indices
             valid_indices = []
             valid_texts = []
+            empty_count = 0
+            whitespace_only = 0
+            too_short = 0
+            
+            MIN_TEXT_LENGTH = 2  # Minimum chars to be considered valid
+            MIN_DURATION = 0.3  # Minimum seconds
+            
             for i, seg in enumerate(segments):
-                text = seg["text"].strip()
-                if text:
-                    valid_indices.append(i)
-                    valid_texts.append(text)
+                text = seg.get("text", "")
+                if not text:
+                    empty_count += 1
+                    continue
+                text = text.strip()
+                if not text:
+                    whitespace_only += 1
+                    continue
+                # Filter too-short segments
+                duration = seg.get("end", 0) - seg.get("start", 0)
+                if len(text) < MIN_TEXT_LENGTH or duration < MIN_DURATION:
+                    too_short += 1
+                    continue
+                valid_indices.append(i)
+                valid_texts.append(text)
+            
+            # Debug: show filtering stats
+            total = len(segments)
+            valid = len(valid_texts)
+            print(f"📊 Segment stats: {total} total → {valid} valid ({empty_count} empty, {whitespace_only} whitespace, {too_short} too-short)")
+            
+            if valid_texts:
+                # Show sample of texts
+                print(f"📝 Sample texts: {valid_texts[:3]}")
             
             print(f"📦 Processing {len(valid_texts)} non-empty segments in batches of {BATCH_SIZE}...")
             
@@ -339,20 +427,19 @@ class TranscriptionService:
                     completed += 1
                     print(f"  ✅ Completed {completed}/{total_batches} batches")
             
-            # Rebuild segments with translations
+            # Rebuild segments with translations - ONLY include filtered segments
+            valid_set = set(valid_indices)
             translation_map = dict(zip(valid_indices, all_translations))
             
             for i, seg in enumerate(segments):
-                original_text = seg["text"].strip()
+                # Skip segments that didn't pass filter
+                if i not in valid_set:
+                    continue
                 
-                if i in translation_map:
-                    translated_text = translation_map[i]
-                    if translated_text and translated_text.strip():
-                        final_text = translated_text.strip()
-                    else:
-                        final_text = original_text
-                else:
-                    final_text = original_text
+                original_text = seg["text"].strip()
+                translated_text = translation_map.get(i, original_text)
+                
+                final_text = translated_text.strip() if translated_text else original_text
                 
                 # Only add segments with non-empty text
                 if final_text and final_text.strip():

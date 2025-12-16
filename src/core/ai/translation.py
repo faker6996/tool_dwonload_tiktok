@@ -287,7 +287,40 @@ class OpenAIProvider(TranslationProvider):
         
         try:
             import json
+            import re
             client = self._get_client()
+            
+            # 1) Normalize texts - remove garbage, collapse spaces
+            def normalize_text(text: str) -> str:
+                if not text:
+                    return text
+                # Remove repeated chars (e.g. "啊啊啊啊" → "啊")
+                text = re.sub(r'(.)\1{4,}', r'\1\1', text)
+                # Remove control characters
+                text = re.sub(r'[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]', '', text)
+                # Collapse multiple spaces/newlines
+                text = re.sub(r'\s+', ' ', text)
+                return text.strip()
+            
+            normalized_texts = [normalize_text(t) for t in texts]
+            
+            # 2) Auto-detect source language (if >30% has Chinese chars → zh)
+            def detect_chinese_ratio(text_list: list) -> float:
+                total_chars = 0
+                chinese_chars = 0
+                for t in text_list:
+                    for char in t:
+                        total_chars += 1
+                        if '\u4e00' <= char <= '\u9fff':  # CJK Unified Ideographs
+                            chinese_chars += 1
+                return chinese_chars / total_chars if total_chars > 0 else 0
+            
+            detected_source = source_lang
+            if source_lang == "auto":
+                chinese_ratio = detect_chinese_ratio(normalized_texts)
+                if chinese_ratio > 0.3:
+                    detected_source = "zh"
+                    print(f"🔍 Auto-detected Chinese source ({chinese_ratio*100:.0f}% Chinese chars)")
             
             lang_names = {
                 "vi": "Vietnamese", "en": "English",
@@ -296,17 +329,20 @@ class OpenAIProvider(TranslationProvider):
                 "ja": "Japanese", "ko": "Korean",
             }
             target_name = lang_names.get(target_lang, target_lang)
+            source_name = lang_names.get(detected_source, detected_source) if detected_source != "auto" else "auto-detect"
             n = len(texts)
             
-            # Create JSON payload for robust input parsing
+            # 3) Create payload with repair prompt
             payload = {
+                "source_language": source_name,
                 "target_language": target_name,
-                "lines": texts,
+                "lines": normalized_texts,
                 "rules": [
                     "Translate each line to target language",
                     "Keep the same number of lines and order",
                     "Do not add or remove content",
-                    "Return ONLY a JSON array of strings"
+                    "If a line appears to be misrecognized (noise/typos), translate based on the most natural context without adding new meaning",
+                    "Return ONLY a JSON object with translations array"
                 ]
             }
             
