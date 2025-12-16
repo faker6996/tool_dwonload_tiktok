@@ -213,6 +213,7 @@ class OpenAIProvider(TranslationProvider):
         model_names = {
             "gpt-5": "GPT-5",
             "gpt-5-mini": "GPT-5 mini",
+            "gpt-5-nano": "GPT-5 nano",
             "gpt-4o": "GPT-4o",
         }
         return model_names.get(self.model, self.model)
@@ -248,8 +249,7 @@ class OpenAIProvider(TranslationProvider):
                 messages=[
                     {"role": "system", "content": f"Translate to {target_name}. Return only the translation."},
                     {"role": "user", "content": text}
-                ],
-                temperature=0.3
+                ]
             )
             return response.choices[0].message.content.strip() or text
             
@@ -284,8 +284,7 @@ class OpenAIProvider(TranslationProvider):
                 messages=[
                     {"role": "system", "content": f"Translate each numbered line to {target_name}. Keep numbering. Return only translations."},
                     {"role": "user", "content": numbered_texts}
-                ],
-                temperature=0.3
+                ]
             )
             
             result_text = response.choices[0].message.content.strip()
@@ -325,6 +324,7 @@ class TranslationService:
     PROVIDER_GEMINI = "gemini"
     PROVIDER_GPT5 = "gpt5"
     PROVIDER_GPT5_MINI = "gpt5_mini"
+    PROVIDER_GPT5_NANO = "gpt5_nano"
     
     def __init__(self):
         self.providers = {
@@ -332,6 +332,7 @@ class TranslationService:
             self.PROVIDER_GEMINI: GeminiProProvider(),
             self.PROVIDER_GPT5: OpenAIProvider(model="gpt-5"),
             self.PROVIDER_GPT5_MINI: OpenAIProvider(model="gpt-5-mini"),
+            self.PROVIDER_GPT5_NANO: OpenAIProvider(model="gpt-5-nano"),
         }
         self.current_provider = self.PROVIDER_GOOGLE
     
@@ -352,7 +353,7 @@ class TranslationService:
     
     def set_openai_api_key(self, api_key: str):
         """Set OpenAI API key for GPT-5 providers."""
-        for provider_key in [self.PROVIDER_GPT5, self.PROVIDER_GPT5_MINI]:
+        for provider_key in [self.PROVIDER_GPT5, self.PROVIDER_GPT5_MINI, self.PROVIDER_GPT5_NANO]:
             if isinstance(self.providers[provider_key], OpenAIProvider):
                 self.providers[provider_key].set_api_key(api_key)
     

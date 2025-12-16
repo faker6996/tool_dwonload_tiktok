@@ -98,7 +98,8 @@ class CaptionDialog(QDialog):
             "Google Translate (Miễn phí)",
             "Gemini Pro",
             "GPT-5 (Chất lượng cao)",
-            "GPT-5 mini (Rẻ nhất 🔥)",
+            "GPT-5 mini",
+            "GPT-5 nano (Rẻ nhất 🔥)",
         ])
         self.provider_combo.currentIndexChanged.connect(self.on_provider_changed)
         self.provider_combo.setMinimumWidth(200)
@@ -236,7 +237,7 @@ class CaptionDialog(QDialog):
         if mode_index == 1:  # Translate mode
             from src.core.ai.translation import translation_service
             
-            provider_map = {0: "google", 1: "gemini", 2: "gpt5", 3: "gpt5_mini"}
+            provider_map = {0: "google", 1: "gemini", 2: "gpt5", 3: "gpt5_mini", 4: "gpt5_nano"}
             provider = provider_map.get(self.provider_combo.currentIndex(), "google")
             translation_service.set_provider(provider)
             
@@ -245,7 +246,7 @@ class CaptionDialog(QDialog):
             if api_key:
                 if provider == "gemini":
                     translation_service.set_gemini_api_key(api_key)
-                elif provider in ["gpt5", "gpt5_mini"]:
+                elif provider in ["gpt5", "gpt5_mini", "gpt5_nano"]:
                     translation_service.set_openai_api_key(api_key)
         
         # Map combo selection to language code

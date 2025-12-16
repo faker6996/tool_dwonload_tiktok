@@ -108,7 +108,8 @@ class SettingsDialog(QDialog):
             "Google Translate (Miễn phí)",
             "Gemini Pro",
             "GPT-5",
-            "GPT-5 mini (Rẻ nhất 🔥)",
+            "GPT-5 mini",
+            "GPT-5 nano (Rẻ nhất 🔥)",
         ])
         current_provider = self.config.get("default_translation_provider", 0)
         self.default_provider_combo.setCurrentIndex(current_provider)
@@ -200,7 +201,7 @@ class SettingsDialog(QDialog):
             translation_service.set_openai_api_key(openai_key)
         
         # Set default provider
-        provider_map = {0: "google", 1: "gemini", 2: "gpt5", 3: "gpt5_mini"}
+        provider_map = {0: "google", 1: "gemini", 2: "gpt5", 3: "gpt5_mini", 4: "gpt5_nano"}
         provider = provider_map.get(self.config.get("default_translation_provider", 0), "google")
         translation_service.set_provider(provider)
 
@@ -223,7 +224,7 @@ def load_settings_on_startup():
                 translation_service.set_openai_api_key(openai_key)
             
             # Set default provider
-            provider_map = {0: "google", 1: "gemini", 2: "gpt5", 3: "gpt5_mini"}
+            provider_map = {0: "google", 1: "gemini", 2: "gpt5", 3: "gpt5_mini", 4: "gpt5_nano"}
             provider = provider_map.get(config.get("default_translation_provider", 0), "google")
             translation_service.set_provider(provider)
             

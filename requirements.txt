@@ -3,6 +3,7 @@ PyQt6
 requests
 yt-dlp
 qtawesome
+python-dotenv  # Load API keys from .env file
 
 # Video/Audio Processing
 pillow
