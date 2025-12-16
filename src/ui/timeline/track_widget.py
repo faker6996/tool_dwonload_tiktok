@@ -55,14 +55,11 @@ class TrackWidget(QFrame):
         
         self.layout.addWidget(header)
         
-        # Track Content Area (Scrollable implicitly via parent)
+        # Track Content Area - Use absolute positioning for clips!
         self.content_area = QWidget()
         self.content_area.setObjectName("track_content")
         self.content_area.setStyleSheet("background-color: #121212;")
-        self.content_layout = QHBoxLayout(self.content_area)
-        self.content_layout.setContentsMargins(0, 5, 0, 5)
-        self.content_layout.setSpacing(0)
-        self.content_layout.setAlignment(Qt.AlignmentFlag.AlignLeft)
+        # NO layout manager - we'll use absolute positioning
         
         self.layout.addWidget(self.content_area)
         
@@ -94,31 +91,39 @@ class TrackWidget(QFrame):
         return btn
 
     def refresh(self):
-        # Clear existing clips
-        for i in reversed(range(self.content_layout.count())): 
-            item = self.content_layout.itemAt(i)
-            if item.widget():
-                item.widget().setParent(None)
-            
+        # Clear existing clips (delete child widgets of content_area)
+        for child in self.content_area.findChildren(ClipWidget):
+            child.setParent(None)
+            child.deleteLater()
+        
         # Sort clips by start_time
         sorted_clips = sorted(self.track.clips, key=lambda c: c.start_time)
         
-        # Position clips based on start_time
+        # Calculate max end time for content area width
+        max_end_time = 0.0
+        for clip in sorted_clips:
+            end_time = clip.start_time + clip.duration
+            if end_time > max_end_time:
+                max_end_time = end_time
+        
+        # Set content area minimum width
+        min_width = max(500, int(max_end_time * self.pixels_per_second) + 100)
+        self.content_area.setMinimumWidth(min_width)
+        
+        # Position clips using ABSOLUTE POSITIONING (not layout!)
         for clip in sorted_clips:
             widget = ClipWidget(clip)
+            widget.setParent(self.content_area)
+            
+            # Calculate position and size
+            x_pos = int(clip.start_time * self.pixels_per_second)
             width = max(30, int(clip.duration * self.pixels_per_second))  # Min width 30px
             
-            # Calculate x position based on start_time
-            x_pos = int(clip.start_time * self.pixels_per_second)
-            
-            # Set size
+            # Move clip to correct position (absolute positioning)
+            widget.move(x_pos, 5)  # 5px top padding
             widget.setFixedSize(width, 80)
             widget.clicked.connect(self.on_clip_clicked)
-            
-            # Add to layout at correct position using spacer
-            self.content_layout.addWidget(widget)
-            
-        self.content_layout.addStretch()
+            widget.show()
 
     def on_clip_clicked(self, clip_widget):
         self.clip_selected.emit(clip_widget.clip)

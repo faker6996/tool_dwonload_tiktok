@@ -261,7 +261,7 @@ class OpenAIProvider(TranslationProvider):
                     {"role": "system", "content": f"You are a translator. Translate to {target_name}. Output ONLY the translation, nothing else."},
                     {"role": "user", "content": text}
                 ],
-                max_tokens=500  # Limit output tokens
+                max_completion_tokens=500  # Limit output tokens (new param for GPT-4o/5)
             )
             return response.choices[0].message.content.strip() or text
             
@@ -301,7 +301,7 @@ class OpenAIProvider(TranslationProvider):
                     {"role": "system", "content": f"You are a translator. Translate each numbered line to {target_name}. Rules:\n- Keep numbering (1. 2. 3.)\n- Output ONLY translations\n- No explanations or notes"},
                     {"role": "user", "content": numbered_texts}
                 ],
-                max_tokens=max_tokens
+                max_completion_tokens=max_tokens  # New param for GPT-4o/5
             )
             
             result_text = response.choices[0].message.content.strip()

@@ -11,7 +11,7 @@ class CaptionDialog(QDialog):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setWindowTitle("📝 Auto Sub Settings")
-        self.setFixedSize(500, 480)  # Larger for more options
+        self.setFixedSize(580, 520)  # Wider dialog for longer combobox text
         self.result_language = None
         self.result_translate_to = None
         self.result_mode = "transcribe"  # transcribe, translate, or remove
@@ -58,7 +58,7 @@ class CaptionDialog(QDialog):
             "🇯🇵 日本語 (Japanese)",
             "🇰🇷 한국어 (Korean)",
         ])
-        self.source_lang_combo.setMinimumWidth(200)
+        self.source_lang_combo.setMinimumWidth(280)
         source_layout.addWidget(self.source_lang_combo)
         source_layout.addStretch()
         
@@ -80,7 +80,7 @@ class CaptionDialog(QDialog):
             "🇩🇪 Deutsch",
             "🇪🇸 Español",
         ])
-        self.target_lang_combo.setMinimumWidth(200)
+        self.target_lang_combo.setMinimumWidth(280)
         target_layout.addWidget(self.target_lang_combo)
         target_layout.addStretch()
         
@@ -102,7 +102,7 @@ class CaptionDialog(QDialog):
             "GPT-5 nano (Rẻ nhất 🔥)",
         ])
         self.provider_combo.currentIndexChanged.connect(self.on_provider_changed)
-        self.provider_combo.setMinimumWidth(200)
+        self.provider_combo.setMinimumWidth(280)
         provider_row.addWidget(self.provider_combo)
         provider_row.addStretch()
         provider_layout.addLayout(provider_row)
@@ -134,6 +134,7 @@ class CaptionDialog(QDialog):
             "☁️ OpenAI API (Nhanh, $0.006/phút)",
         ])
         self.whisper_engine_combo.currentIndexChanged.connect(self.on_whisper_engine_changed)
+        self.whisper_engine_combo.setMinimumWidth(280)
         whisper_row.addWidget(self.whisper_engine_combo)
         whisper_row.addStretch()
         whisper_layout.addLayout(whisper_row)
