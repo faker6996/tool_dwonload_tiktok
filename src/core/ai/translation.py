@@ -91,7 +91,7 @@ class GeminiProProvider(TranslationProvider):
     """Gemini Pro translation via Google AI API."""
     
     def __init__(self, api_key: str = None):
-        self.api_key = api_key or os.environ.get("GEMINI_API_KEY", "AIzaSyDoRZHUYsBYKB4O0Gk4TAXUcdVz1GrEFmk")
+        self.api_key = api_key or os.environ.get("GEMINI_API_KEY")
         self._model = None
     
     def get_name(self) -> str:
@@ -205,7 +205,7 @@ class OpenAIProvider(TranslationProvider):
     """OpenAI GPT-5/GPT-5 mini translation provider."""
     
     def __init__(self, api_key: str = None, model: str = "gpt-5"):
-        self.api_key = api_key or os.environ.get("OPENAI_API_KEY", "")
+        self.api_key = api_key or os.environ.get("OPENAI_API_KEY")
         self.model = model
         self._client = None
     
