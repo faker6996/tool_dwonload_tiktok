@@ -225,7 +225,6 @@ class OpenAIProvider(TranslationProvider):
             "gpt-5": "GPT-5",
             "gpt-5-mini": "GPT-5 mini",
             "gpt-5-nano": "GPT-5 nano",
-            "gpt-4o": "GPT-4o",
         }
         return model_names.get(self.model, self.model)
     
@@ -240,6 +239,7 @@ class OpenAIProvider(TranslationProvider):
         return self._client
     
     def translate(self, text: str, target_lang: str, source_lang: str = "auto") -> str:
+        """Translate single text using OpenAI Responses API."""
         if not text or not text.strip():
             return text
         
@@ -255,15 +255,20 @@ class OpenAIProvider(TranslationProvider):
             }
             target_name = lang_names.get(target_lang, target_lang)
             
-            response = client.chat.completions.create(
+            # Use Responses API for GPT-5 (not Chat Completions)
+            response = client.responses.create(
                 model=self.model,
-                messages=[
-                    {"role": "system", "content": f"You are a translator. Translate to {target_name}. Output ONLY the translation, nothing else."},
+                max_output_tokens=500,
+                input=[
+                    {"role": "system", "content": f"You are a translator. Translate to {target_name}. Output only the translation."},
                     {"role": "user", "content": text}
-                ],
-                max_completion_tokens=500  # Limit output tokens (new param for GPT-4o/5)
+                ]
             )
-            return response.choices[0].message.content.strip() or text
+            
+            if response.status != "completed" or not response.output_text:
+                return GoogleTranslateProvider().translate(text, target_lang, source_lang)
+            
+            return response.output_text.strip() or text
             
         except Exception as e:
             error_str = str(e)
@@ -273,7 +278,7 @@ class OpenAIProvider(TranslationProvider):
             return GoogleTranslateProvider().translate(text, target_lang, source_lang)
     
     def translate_batch(self, texts: list, target_lang: str, source_lang: str = "auto") -> list:
-        """Translate multiple texts using OpenAI - batch in single prompt."""
+        """Translate multiple texts using OpenAI Responses API - JSON input/output for accurate 1:1 mapping."""
         if not texts:
             return []
         
@@ -281,48 +286,94 @@ class OpenAIProvider(TranslationProvider):
             return [GoogleTranslateProvider().translate(t, target_lang, source_lang) for t in texts]
         
         try:
+            import json
             client = self._get_client()
+            
             lang_names = {
-                "vi": "Vietnamese", "en": "English", "zh": "Chinese",
+                "vi": "Vietnamese", "en": "English",
+                "zh": "Chinese", "zh-CN": "Simplified Chinese",
+                "zh-TW": "Traditional Chinese",
                 "ja": "Japanese", "ko": "Korean",
             }
             target_name = lang_names.get(target_lang, target_lang)
+            n = len(texts)
             
-            # Format texts with numbers
-            numbered_texts = "\n".join([f"{i+1}. {t}" for i, t in enumerate(texts)])
+            # Create JSON payload for robust input parsing
+            payload = {
+                "target_language": target_name,
+                "lines": texts,
+                "rules": [
+                    "Translate each line to target language",
+                    "Keep the same number of lines and order",
+                    "Do not add or remove content",
+                    "Return ONLY a JSON array of strings"
+                ]
+            }
             
-            # Estimate max tokens: roughly 2-3x input for translations
-            estimated_tokens = len(numbered_texts.split()) * 3
-            max_tokens = min(4000, max(500, estimated_tokens))
+            # Dynamic max_output_tokens based on batch size (not char count)
+            max_tokens = min(8000, 500 + 250 * len(texts))
             
-            response = client.chat.completions.create(
+            # Use Responses API with json_schema for exact array format
+            response = client.responses.create(
                 model=self.model,
-                messages=[
-                    {"role": "system", "content": f"You are a translator. Translate each numbered line to {target_name}. Rules:\n- Keep numbering (1. 2. 3.)\n- Output ONLY translations\n- No explanations or notes"},
-                    {"role": "user", "content": numbered_texts}
+                max_output_tokens=max_tokens,
+                input=[
+                    {"role": "system", "content": "You are a professional subtitle translator. Return only JSON."},
+                    {"role": "user", "content": json.dumps(payload, ensure_ascii=False)}
                 ],
-                max_completion_tokens=max_tokens  # New param for GPT-4o/5
+                text={
+                    "format": {
+                        "type": "json_schema",
+                        "name": "translations",
+                        "strict": True,
+                        "schema": {
+                            "type": "object",
+                            "properties": {
+                                "translations": {
+                                    "type": "array",
+                                    "items": {"type": "string"},
+                                    "minItems": n,
+                                    "maxItems": n
+                                }
+                            },
+                            "required": ["translations"],
+                            "additionalProperties": False
+                        }
+                    }
+                }
             )
             
-            result_text = response.choices[0].message.content.strip()
+            # Check response status
+            if response.status != "completed":
+                print(f"⚠️ OpenAI response status: {response.status}")
+                return texts
             
-            # Parse numbered results
-            import re
-            lines = result_text.split("\n")
-            results = []
-            for line in lines:
-                line = line.strip()
-                if not line:
-                    continue
-                cleaned = re.sub(r'^\d+[\.\)]\s*', '', line)
-                if cleaned:
-                    results.append(cleaned)
+            output = response.output_text
+            if not output:
+                print("⚠️ OpenAI returned EMPTY output_text")
+                return texts
             
-            # Pad with originals if needed
-            while len(results) < len(texts):
-                results.append(texts[len(results)])
-            
-            return results[:len(texts)]
+            # Parse JSON response - schema guarantees {translations: [...]}
+            try:
+                obj = json.loads(output)
+                results = obj.get("translations", [])
+                
+                if not isinstance(results, list):
+                    print(f"⚠️ translations is not array: {type(results)}")
+                    return texts
+                
+                # Pad with originals if needed
+                if len(results) < n:
+                    print(f"⚠️ Got {len(results)} results, expected {n}. Padding.")
+                    while len(results) < n:
+                        results.append(texts[len(results)])
+                
+                return results[:n]
+                
+            except json.JSONDecodeError as e:
+                print(f"⚠️ Failed to parse JSON: {e}")
+                print(f"   Output was: {output[:200]}...")
+                return texts
             
         except RateLimitError:
             raise
