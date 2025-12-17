@@ -1,6 +1,6 @@
 from PyQt6.QtWidgets import QFrame, QLabel, QHBoxLayout, QWidget
 from PyQt6.QtCore import Qt, QMimeData, pyqtSignal, QRect
-from PyQt6.QtGui import QDrag, QPainter, QPixmap, QColor, QPen, QBrush
+from PyQt6.QtGui import QDrag, QPainter, QPixmap, QColor, QPen, QBrush, QFont
 
 class ClipWidget(QFrame):
     """
@@ -86,6 +86,9 @@ class ClipWidget(QFrame):
         
         # Draw Text
         painter.setPen(QColor("#FFFFFF"))
+        # Set explicit font to prevent Qt font size errors
+        font = QFont("Inter", 10)
+        painter.setFont(font)
         text_rect = rect.adjusted(10, 0, -10, 0)
         painter.drawText(text_rect, Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft, self.clip.name)
 

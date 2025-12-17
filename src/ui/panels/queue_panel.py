@@ -62,12 +62,16 @@ class QueueTaskWidget(QFrame):
         
         # Status icon
         self.status_icon = QLabel("⏳")
-        self.status_icon.setFont(QFont("", 14))
+        # Use explicit font name to prevent Qt font size errors
+        icon_font = QFont("Segoe UI Emoji", 14)
+        self.status_icon.setFont(icon_font)
         top_row.addWidget(self.status_icon)
-        
+
         # Task type badge
         self.type_badge = QLabel()
-        self.type_badge.setFont(QFont("", 9))
+        # Use explicit font name to prevent Qt font size errors
+        badge_font = QFont("Inter", 9)
+        self.type_badge.setFont(badge_font)
         top_row.addWidget(self.type_badge)
         
         # Title

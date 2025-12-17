@@ -190,7 +190,9 @@ class StickerItem(QGraphicsObject):
         
         # Draw emoji/text - scale font with sticker size
         scaled_font = QFont(self._font)
-        scaled_font.setPointSizeF(self._font.pointSizeF() * self._scale_factor)
+        # Ensure font size is always valid (> 0)
+        scaled_size = max(1.0, self._font.pointSizeF() * self._scale_factor)
+        scaled_font.setPointSizeF(scaled_size)
         painter.setFont(scaled_font)
         painter.setPen(QColor("#ffffff"))
         
@@ -914,7 +916,9 @@ class Player(QFrame):
 
             # Apply basic font styling from clip
             font = self.video_text.font()
-            font.setPointSize(getattr(clip, "font_size", 24))
+            # Ensure font size is always valid (> 0)
+            font_size = max(1, int(getattr(clip, "font_size", 24)))
+            font.setPointSize(font_size)
             self.video_text.setFont(font)
 
             color = QColor(getattr(clip, "font_color", "#FFFFFF"))
