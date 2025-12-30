@@ -77,7 +77,7 @@ class RenderEngine(QObject):
             return
 
         try:
-            cmd, concat_file = self._build_ffmpeg_command(timeline_clips, output_path)
+            cmd, concat_file, temp_files = self._build_ffmpeg_command(timeline_clips, output_path)
         except Exception as e:
             self.render_finished.emit(False, f"Failed to build FFmpeg command: {e}")
             return
@@ -119,10 +119,16 @@ class RenderEngine(QObject):
                         os.remove(concat_file)
                 except Exception:
                     pass
+                for temp_path in temp_files:
+                    try:
+                        if temp_path and os.path.exists(temp_path):
+                            os.remove(temp_path)
+                    except Exception:
+                        pass
 
         threading.Thread(target=run_render, daemon=True).start()
 
-    def _build_ffmpeg_command(self, clips: List[Dict], output_path: str) -> Tuple[List[str], Optional[str]]:
+    def _build_ffmpeg_command(self, clips: List[Dict], output_path: str) -> Tuple[List[str], Optional[str], List[str]]:
         """
         Build a simple FFmpeg concat command from a list of clips.
         Each clip dict must contain: path.
@@ -150,9 +156,9 @@ class RenderEngine(QObject):
         except:
             res_w, res_h = 1920, 1080
 
-        # Create sticker images and build overlay filter
+        # Create sticker images and prepare overlay data
         sticker_inputs = []  # Additional input files for stickers
-        overlay_filter = ""
+        sticker_overlays = []  # (abs_x, abs_y) per sticker input
         temp_sticker_files = []
         
         stickers_list = getattr(self, "stickers", [])
@@ -190,7 +196,8 @@ class RenderEngine(QObject):
                     draw.text((img_size//2, img_size//2), content, font=font, anchor="mm")
                     
                     # Save temporary PNG
-                    sticker_path = tempfile.mktemp(suffix=f"_sticker_{idx}.png", prefix="export_")
+                    sticker_fd, sticker_path = tempfile.mkstemp(suffix=f"_sticker_{idx}.png", prefix="export_")
+                    os.close(sticker_fd)
                     img.save(sticker_path, "PNG")
                     temp_sticker_files.append(sticker_path)
                     
@@ -198,16 +205,9 @@ class RenderEngine(QObject):
                     abs_x = int(res_w / 2 + x - img_size / 2)
                     abs_y = int(res_h / 2 + y - img_size / 2)
                     
-                    # Add input and overlay filter
-                    sticker_inputs.extend(["-i", sticker_path])
-                    
-                    if idx == 0:
-                        overlay_filter = f"[0:v][1:v]overlay={abs_x}:{abs_y}"
-                    else:
-                        overlay_filter += f"[tmp{idx-1}];[tmp{idx-1}][{idx+1}:v]overlay={abs_x}:{abs_y}"
-                    
-                    if idx < len(stickers_list) - 1:
-                        overlay_filter += f"[tmp{idx}]"
+                    # Add input and overlay data
+                    sticker_inputs.append(sticker_path)
+                    sticker_overlays.append((abs_x, abs_y))
                         
             except ImportError as e:
                 print(f"Pillow not available for sticker export: {e}")
@@ -215,7 +215,7 @@ class RenderEngine(QObject):
                 print(f"Error creating sticker images: {e}")
         
         # Store temp files for cleanup
-        self._temp_sticker_files = temp_sticker_files
+        temp_files = list(temp_sticker_files)
 
         cmd = [
             self.ffmpeg_path,
@@ -227,16 +227,10 @@ class RenderEngine(QObject):
             "-i",
             concat_path,
         ]
-        
+
         # Add sticker image inputs
-        cmd.extend(sticker_inputs)
-        
-        cmd.extend([
-            "-r",
-            str(fps),
-            "-s",
-            resolution,
-        ])
+        for sticker_path in sticker_inputs:
+            cmd.extend(["-i", sticker_path])
         
         # Build video filter chain
         video_filters = []
@@ -255,34 +249,28 @@ class RenderEngine(QObject):
                     print(f"Created subtitle file: {subtitle_file}")
             except Exception as e:
                 print(f"Error creating subtitles: {e}")
+        if subtitle_file:
+            temp_files.append(subtitle_file)
         
         # Build audio mixing if we have TTS/audio tracks
         audio_tracks_list = getattr(self, "audio_tracks", [])
         audio_inputs = []
-        audio_filter = ""
+        audio_input_files = []
         
         if audio_tracks_list:
             # Add each audio file as input
-            for idx, audio in enumerate(audio_tracks_list):
+            for audio in audio_tracks_list:
                 audio_path = audio.get("path", "")
                 if audio_path and os.path.exists(audio_path):
+                    audio_input_files.append(audio_path)
                     audio_inputs.extend(["-i", audio_path])
             
-            if audio_inputs:
-                # Build amix filter: reduce original audio 50%, mix with TTS tracks
-                num_audio = len(audio_tracks_list) + 1  # +1 for original video audio
-                # Reduce original video audio to 50% volume before mixing
-                audio_filter = f"[0:a]volume=0.5[orig];"
-                audio_filter += f"[orig]"
-                for i in range(len(audio_tracks_list)):
-                    # TTS audio is input index 1, 2, etc. (after concat input 0)
-                    audio_filter += f"[{i + 1}:a]"
-                audio_filter += f"amix=inputs={num_audio}:duration=longest[aout]"
-                print(f"Audio mix filter (original reduced 50%): {audio_filter}")
-        
-        # Add audio inputs after video input (before other options)
-        cmd[8:8] = audio_inputs  # Insert after concat input
-        
+            if audio_input_files:
+                print(f"Audio mix inputs: {len(audio_input_files)} track(s)")
+
+        # Add audio inputs after sticker inputs
+        cmd.extend(audio_inputs)
+
         cmd.extend([
             "-r",
             str(fps),
@@ -290,40 +278,55 @@ class RenderEngine(QObject):
             resolution,
         ])
         
-        # Decide on filter strategy: use filter_complex if we have audio mixing,
-        # otherwise use simple -vf for video filters
-        if audio_filter:
-            # Use filter_complex for both video and audio filters
-            full_filter = ""
-            
-            # Add video filters (subtitles) - need to output to [vout]
+        # Build filter_complex if needed
+        needs_filter_complex = bool(video_filters or sticker_inputs or audio_input_files)
+        if needs_filter_complex:
+            filter_parts = []
+
+            # Video chain
+            video_map_label = "0:v"
+            video_graph_label = "[0:v]"
             if video_filters:
-                full_filter = f"[0:v]{','.join(video_filters)}[vout];"
-            
-            # Add audio filter
-            full_filter += audio_filter
-            
-            cmd.extend(["-filter_complex", full_filter])
-            
+                filter_parts.append(f"[0:v]{','.join(video_filters)}[v0]")
+                video_graph_label = "[v0]"
+                video_map_label = "[v0]"
+
+            if sticker_inputs:
+                base_index = 1
+                prev_label = video_graph_label
+                for i, (abs_x, abs_y) in enumerate(sticker_overlays):
+                    sticker_label = f"[{base_index + i}:v]"
+                    out_label = f"[v{i + 1}]"
+                    filter_parts.append(f"{prev_label}{sticker_label}overlay={abs_x}:{abs_y}{out_label}")
+                    prev_label = out_label
+                video_graph_label = prev_label
+                video_map_label = prev_label
+
+            # Audio chain
+            audio_output_label = ""
+            if audio_input_files:
+                audio_base_index = 1 + len(sticker_inputs)
+                filter_parts.append("[0:a]volume=0.5[orig]")
+                mix_inputs = "[orig]" + "".join(
+                    f"[{audio_base_index + i}:a]" for i in range(len(audio_input_files))
+                )
+                filter_parts.append(
+                    f"{mix_inputs}amix=inputs={len(audio_input_files) + 1}:duration=longest[aout]"
+                )
+                audio_output_label = "[aout]"
+
+            cmd.extend(["-filter_complex", ";".join(filter_parts)])
+
             # Map outputs
-            if video_filters:
-                cmd.extend(["-map", "[vout]"])
+            cmd.extend(["-map", video_map_label])
+            if audio_output_label:
+                cmd.extend(["-map", audio_output_label])
             else:
-                cmd.extend(["-map", "0:v"])
-            cmd.extend(["-map", "[aout]"])
-            
-            # Audio codec for mixed audio
+                cmd.extend(["-map", "0:a?"])
+
             cmd.extend(["-c:a", "aac", "-b:a", "192k"])
         else:
-            # No audio mixing - use simple -vf for video filters
-            if video_filters:
-                cmd.extend(["-vf", ",".join(video_filters)])
-            
-            # Add overlay filter if we have stickers (separate filter_complex)
-            if overlay_filter:
-                cmd.extend(["-filter_complex", overlay_filter])
-            
-            # Original audio passthrough
+            cmd.extend(["-map", "0:v", "-map", "0:a?"])
             cmd.extend(["-c:a", "aac", "-b:a", "192k"])
         
         cmd.extend([
@@ -342,7 +345,7 @@ class RenderEngine(QObject):
         
         print(f"FFmpeg command: {' '.join(cmd)}")
 
-        return cmd, concat_path
+        return cmd, concat_path, temp_files
 
     def _create_ass_subtitle_file(self, subtitles: List[Dict], video_width: int, video_height: int) -> Optional[str]:
         """
