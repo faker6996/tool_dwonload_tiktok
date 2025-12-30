@@ -7,6 +7,8 @@ class ClipWidget(QFrame):
     Visual representation of a Clip on the timeline.
     """
     clicked = pyqtSignal(object) # Emits self (ClipWidget)
+    clicked_at = pyqtSignal(object, float) # Emits self and local x position
+    _waveform_cache = {}
 
     def __init__(self, clip, parent=None):
         super().__init__(parent)
@@ -19,7 +21,11 @@ class ClipWidget(QFrame):
         
         # Load waveform if exists
         if self.clip.waveform_path:
-            self.waveform_pixmap = QPixmap(self.clip.waveform_path)
+            cached = self._waveform_cache.get(self.clip.waveform_path)
+            if cached is None:
+                cached = QPixmap(self.clip.waveform_path)
+                self._waveform_cache[self.clip.waveform_path] = cached
+            self.waveform_pixmap = cached
             
         # We don't use layout for labels anymore, we draw them
         
@@ -95,6 +101,7 @@ class ClipWidget(QFrame):
     def mousePressEvent(self, event):
         if event.button() == Qt.MouseButton.LeftButton:
             self.clicked.emit(self)
+            self.clicked_at.emit(self, event.position().x())
             event.accept()
         else:
             super().mousePressEvent(event)

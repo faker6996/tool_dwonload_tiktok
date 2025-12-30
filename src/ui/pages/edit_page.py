@@ -89,6 +89,7 @@ class EditPage(QWidget):
 
             # Sync player playback position to timeline playhead
             self.player.playhead_changed.connect(timeline_widget.set_playhead_time)
+            timeline_widget.playhead_clicked.connect(self.on_timeline_seek)
             
             # Auto-add video to timeline when dropped on Player
             self.player.media_dropped.connect(timeline_widget.add_clip_from_file)
@@ -97,6 +98,9 @@ class EditPage(QWidget):
         self.player.transform_changed.connect(lambda: self.inspector.set_clip(self.player.current_clip))
         if hasattr(self.inspector, "aspect_ratio_changed"):
             self.inspector.aspect_ratio_changed.connect(self.player.set_aspect_ratio)
+
+    def on_timeline_seek(self, time_seconds: float, clip):
+        self.player.seek_to_timeline_time(time_seconds, clip)
 
     def on_effect_selected(self, name: str):
         """

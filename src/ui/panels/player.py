@@ -890,7 +890,7 @@ class Player(QFrame):
         transform.scale(scale, scale)
         self.view.setTransform(transform)
 
-    def set_clip(self, clip: Clip):
+    def set_clip(self, clip: Clip, autoplay: bool = True):
         self.current_clip = clip
         # Remember clip position on main timeline (seconds)
         self.timeline_offset = getattr(clip, "start_time", 0.0) if clip else 0.0
@@ -946,8 +946,42 @@ class Player(QFrame):
         
         # Play Media
         self.media_player.setSource(QUrl.fromLocalFile(clip.asset_id))
-        self.media_player.play()
-        self.btn_play.setText("⏸")
+        if autoplay:
+            self.media_player.play()
+            self.btn_play.setText("⏸")
+        else:
+            self.media_player.pause()
+            self.btn_play.setText("▶")
+
+    def seek_to_timeline_time(self, time_seconds: float, clip: Clip | None = None):
+        if clip and clip is not self.current_clip:
+            self.set_clip(clip, autoplay=False)
+
+        if not self.current_clip:
+            return
+
+        if getattr(self.current_clip, "clip_type", "video") == "text":
+            return
+
+        clip_start = float(getattr(self.current_clip, "start_time", 0.0) or 0.0)
+        local_time = time_seconds - clip_start
+        if local_time < 0.0:
+            local_time = 0.0
+
+        clip_length = getattr(self.current_clip, "length", None)
+        if clip_length is not None:
+            local_time = min(local_time, float(clip_length))
+
+        was_playing = (
+            self.media_player.playbackState()
+            == QMediaPlayer.PlaybackState.PlayingState
+        )
+        self.media_player.setPosition(int(local_time * 1000))
+        if was_playing:
+            self.media_player.play()
+            self.btn_play.setText("⏸")
+        else:
+            self.btn_play.setText("▶")
 
     def toggle_playback(self):
         if self.media_player.playbackState() == QMediaPlayer.PlaybackState.PlayingState:

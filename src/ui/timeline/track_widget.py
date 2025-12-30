@@ -10,6 +10,7 @@ class TrackWidget(QFrame):
     Contains ClipWidgets.
     """
     clip_selected = pyqtSignal(object) # Emits Clip object
+    playhead_seek = pyqtSignal(float) # Emits timeline time in seconds
 
     def __init__(self, track: Track, pixels_per_second=20):
         super().__init__()
@@ -102,7 +103,7 @@ class TrackWidget(QFrame):
         # Calculate max end time for content area width
         max_end_time = 0.0
         for clip in sorted_clips:
-            end_time = clip.start_time + clip.duration
+            end_time = clip.start_time + clip.length
             if end_time > max_end_time:
                 max_end_time = end_time
         
@@ -117,13 +118,20 @@ class TrackWidget(QFrame):
             
             # Calculate position and size
             x_pos = int(clip.start_time * self.pixels_per_second)
-            width = max(30, int(clip.duration * self.pixels_per_second))  # Min width 30px
+            width = max(30, int(clip.length * self.pixels_per_second))  # Min width 30px
             
             # Move clip to correct position (absolute positioning)
             widget.move(x_pos, 5)  # 5px top padding
             widget.setFixedSize(width, 80)
             widget.clicked.connect(self.on_clip_clicked)
+            widget.clicked_at.connect(self.on_clip_clicked_at)
             widget.show()
 
     def on_clip_clicked(self, clip_widget):
         self.clip_selected.emit(clip_widget.clip)
+
+    def on_clip_clicked_at(self, clip_widget, local_x: float):
+        width = max(1, clip_widget.width())
+        ratio = max(0.0, min(1.0, local_x / width))
+        time_seconds = clip_widget.clip.start_time + (clip_widget.clip.length * ratio)
+        self.playhead_seek.emit(time_seconds)

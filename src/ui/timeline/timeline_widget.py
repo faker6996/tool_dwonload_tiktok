@@ -82,6 +82,7 @@ class TimelineWidget(QFrame):
     Manages multiple TrackWidgets.
     """
     clip_selected = pyqtSignal(object) # Emits Clip object or None
+    playhead_clicked = pyqtSignal(float, object) # time_seconds, clip or None
 
     def __init__(self):
         super().__init__()
@@ -141,16 +142,34 @@ class TimelineWidget(QFrame):
         self.refresh_tracks()
 
     def refresh_tracks(self):
-        # Clear existing track widgets
-        for i in reversed(range(self.tracks_layout.count())):
+        existing_widgets = {}
+        for i in range(self.tracks_layout.count()):
             item = self.tracks_layout.itemAt(i)
             if item and item.widget():
-                item.widget().setParent(None)
-            
-        # Add track widgets
+                widget = item.widget()
+                existing_widgets[widget.track] = widget
+
+        # Clear layout items but keep widgets alive for reuse
+        while self.tracks_layout.count():
+            self.tracks_layout.takeAt(0)
+
+        # Remove widgets for tracks that no longer exist
+        for track, widget in list(existing_widgets.items()):
+            if track not in self.tracks:
+                widget.setParent(None)
+                widget.deleteLater()
+                existing_widgets.pop(track, None)
+
+        # Add/reuse track widgets in order
         for track in self.tracks:
-            widget = TrackWidget(track, self.pixels_per_second)
-            widget.clip_selected.connect(self.on_clip_selected)
+            widget = existing_widgets.get(track)
+            if widget is None:
+                widget = TrackWidget(track, self.pixels_per_second)
+                widget.clip_selected.connect(self.on_clip_selected)
+                widget.playhead_seek.connect(self.on_playhead_seek)
+            else:
+                widget.pixels_per_second = self.pixels_per_second
+                widget.refresh()
             self.tracks_layout.addWidget(widget)
 
         # Update container size for proper scrolling
@@ -165,6 +184,17 @@ class TimelineWidget(QFrame):
 
     def on_clip_selected(self, clip):
         self.clip_selected.emit(clip)
+
+    def on_playhead_seek(self, time_seconds: float):
+        clip = self._find_clip_at_time(time_seconds)
+        self.set_playhead_time(time_seconds)
+        self.playhead_clicked.emit(time_seconds, clip)
+
+    def _find_clip_at_time(self, time_seconds: float):
+        for clip in self.main_track.clips:
+            if clip.start_time <= time_seconds < (clip.start_time + clip.length):
+                return clip
+        return None
 
     def dragEnterEvent(self, event):
         if event.mimeData().hasUrls():
