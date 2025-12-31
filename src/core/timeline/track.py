@@ -10,6 +10,7 @@ class Track:
         self.name = name
         self.is_audio = is_audio
         self.clips: List[Clip] = []
+        self.is_muted = False
         self.is_locked = False
         self.is_hidden = False
 

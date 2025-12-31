@@ -1068,8 +1068,26 @@ class Player(QFrame):
                 self.apply_color_correction()
 
         # Apply volume (0.0 - 1.0)
-        if hasattr(self, "audio_output"):
-            self.audio_output.setVolume(self.current_clip.volume)
+        self.apply_audio_state()
+
+    def apply_audio_state(self):
+        """
+        Apply the current clip volume, respecting mute and TTS ducking.
+        """
+        if not hasattr(self, "audio_output"):
+            return
+
+        volume = 0.0
+        if self.current_clip:
+            if getattr(self.current_clip, "muted", False):
+                volume = 0.0
+            else:
+                volume = float(getattr(self.current_clip, "volume", 1.0))
+
+            if getattr(self, "_has_tts", False):
+                volume *= 0.5
+
+        self.audio_output.setVolume(volume)
 
     def on_overlay_changed(self):
         if not self.current_clip:
@@ -1217,17 +1235,11 @@ class Player(QFrame):
         Set whether TTS tracks are present. When TTS is active, reduce video audio to 50%.
         """
         self._has_tts = has_tts
-        if hasattr(self, 'audio_output'):
-            if has_tts:
-                # Reduce video audio to 50% when TTS is present
-                base_volume = getattr(self.current_clip, 'volume', 1.0) if self.current_clip else 1.0
-                self.audio_output.setVolume(base_volume * 0.5)
-                print("Player: TTS detected - video audio reduced to 50%")
-            else:
-                # Restore normal volume
-                if self.current_clip:
-                    self.audio_output.setVolume(self.current_clip.volume)
-                print("Player: No TTS - video audio at normal volume")
+        self.apply_audio_state()
+        if has_tts:
+            print("Player: TTS detected - video audio reduced to 50%")
+        else:
+            print("Player: No TTS - video audio at normal volume")
     
     def update_subtitle_display(self, timeline_time: float):
         """

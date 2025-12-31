@@ -1,4 +1,4 @@
-from PyQt6.QtWidgets import QFrame, QVBoxLayout, QScrollArea, QWidget, QHBoxLayout, QLabel
+from PyQt6.QtWidgets import QFrame, QVBoxLayout, QScrollArea, QWidget, QHBoxLayout, QLabel, QMessageBox
 from PyQt6.QtCore import Qt, pyqtSignal, QRect
 from PyQt6.QtGui import QPainter, QColor, QPen, QFont
 from .track_widget import TrackWidget
@@ -15,6 +15,7 @@ class RulerWidget(QWidget):
         self.pixels_per_second = pixels_per_second
         self.setStyleSheet("background-color: #18181b; border-bottom: 1px solid #27272a;")
         self.playhead_time = 0.0
+        self.scroll_offset = 0
 
     def paintEvent(self, event):
         painter = QPainter(self)
@@ -26,16 +27,21 @@ class RulerWidget(QWidget):
         painter.fillRect(rect, QColor("#18181b"))
         
         # Draw ticks
-        start_x = 120 
-        
-        for i in range(0, 100): 
-            x = start_x + (i * self.pixels_per_second)
-            if x > rect.width():
-                break
-                
+        header_width = 120
+        pps = max(1, self.pixels_per_second)
+        start_time = max(0.0, (self.scroll_offset - header_width) / pps)
+        end_time = start_time + (rect.width() / pps) + 2
+
+        start_sec = int(start_time)
+        end_sec = int(end_time) + 1
+        for i in range(start_sec, end_sec):
+            x = header_width - self.scroll_offset + (i * pps)
+            if x < 0 or x > rect.width():
+                continue
+
             if i % 5 == 0:
                 painter.drawLine(x, 15, x, 30)
-                painter.drawText(x + 2, 12, f"00:{i:02d}")
+                painter.drawText(x + 2, 12, self._format_time(i))
             else:
                 painter.drawLine(x, 22, x, 30)
                 
@@ -44,8 +50,7 @@ class RulerWidget(QWidget):
         painter.drawLine(0, 29, rect.width(), 29)
 
         # Draw playhead indicator & time label
-        start_x = 120
-        x = start_x + int(self.playhead_time * self.pixels_per_second)
+        x = header_width - self.scroll_offset + int(self.playhead_time * pps)
         if 0 <= x <= rect.width():
             painter.setPen(QColor("#6366f1"))
             painter.drawLine(x, 0, x, rect.height())
@@ -60,6 +65,9 @@ class RulerWidget(QWidget):
         self.playhead_time = max(0.0, time_seconds)
         self.update()
 
+    def set_scroll_offset(self, offset: int):
+        self.scroll_offset = max(0, int(offset))
+        self.update()
 
 class TimelineScrollArea(QScrollArea):
     """
@@ -83,6 +91,7 @@ class TimelineWidget(QFrame):
     """
     clip_selected = pyqtSignal(object) # Emits Clip object or None
     playhead_clicked = pyqtSignal(float, object) # time_seconds, clip or None
+    track_audio_changed = pyqtSignal() # Emits when a track's audio state changes
 
     def __init__(self):
         super().__init__()
@@ -129,6 +138,7 @@ class TimelineWidget(QFrame):
         layout.addWidget(scroll)
 
         self.scroll = scroll
+        self.scroll.horizontalScrollBar().valueChanged.connect(self.ruler.set_scroll_offset)
         
         # Playhead (Overlay)
         self.playhead = QFrame(self.tracks_container)
@@ -167,6 +177,9 @@ class TimelineWidget(QFrame):
                 widget = TrackWidget(track, self.pixels_per_second)
                 widget.clip_selected.connect(self.on_clip_selected)
                 widget.playhead_seek.connect(self.on_playhead_seek)
+                if not getattr(widget, "_audio_signal_connected", False):
+                    widget.track_audio_changed.connect(self.track_audio_changed)
+                    widget._audio_signal_connected = True
             else:
                 widget.pixels_per_second = self.pixels_per_second
                 widget.refresh()
@@ -212,6 +225,9 @@ class TimelineWidget(QFrame):
         """
         Add a simple text clip to the main track.
         """
+        if self.main_track.is_locked:
+            QMessageBox.warning(self, "Track Locked", "Track đang bị khóa. Vui lòng mở khóa để thêm clip.")
+            return
         clip = Clip(
             asset_id="text_generated",
             name=text,
@@ -233,6 +249,9 @@ class TimelineWidget(QFrame):
         self.clip_selected.emit(clip)
 
     def add_clip_from_file(self, file_path):
+        if self.main_track.is_locked:
+            QMessageBox.warning(self, "Track Locked", "Track đang bị khóa. Vui lòng mở khóa để thêm clip.")
+            return
         # Lookup in StateManager to get metadata (duration, waveform)
         from src.core.state import state_manager
         
@@ -267,6 +286,8 @@ class TimelineWidget(QFrame):
         
         # Bring playhead to front
         self.playhead.raise_()
+        # Auto-select the new clip so Player/Inspector stay in sync
+        self.clip_selected.emit(clip)
 
     def add_subtitle_track(self, segments, start_offset=0.0):
         """

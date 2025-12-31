@@ -11,6 +11,7 @@ class TrackWidget(QFrame):
     """
     clip_selected = pyqtSignal(object) # Emits Clip object
     playhead_seek = pyqtSignal(float) # Emits timeline time in seconds
+    track_audio_changed = pyqtSignal() # Emits when track audio state changes
 
     def __init__(self, track: Track, pixels_per_second=20):
         super().__init__()
@@ -34,9 +35,9 @@ class TrackWidget(QFrame):
         header_layout.setSpacing(5)
         
         # Track Name
-        name_label = QLabel(track.name)
-        name_label.setStyleSheet("color: #E0E0E0; font-weight: bold; font-size: 12px;")
-        header_layout.addWidget(name_label)
+        self.name_label = QLabel(track.name)
+        self.name_label.setStyleSheet("color: #E0E0E0; font-weight: bold; font-size: 12px;")
+        header_layout.addWidget(self.name_label)
         
         # Controls (Mute, Lock, Hide)
         controls_layout = QHBoxLayout()
@@ -45,6 +46,14 @@ class TrackWidget(QFrame):
         self.mute_btn = self.create_icon_button("mute", "Mute")
         self.lock_btn = self.create_icon_button("lock", "Lock")
         self.hide_btn = self.create_icon_button("eye", "Hide")
+
+        self.mute_btn.setChecked(getattr(self.track, "is_muted", False))
+        self.lock_btn.setChecked(self.track.is_locked)
+        self.hide_btn.setChecked(self.track.is_hidden)
+
+        self.mute_btn.toggled.connect(self.on_mute_toggled)
+        self.lock_btn.toggled.connect(self.on_lock_toggled)
+        self.hide_btn.toggled.connect(self.on_hide_toggled)
         
         controls_layout.addWidget(self.mute_btn)
         controls_layout.addWidget(self.lock_btn)
@@ -63,6 +72,11 @@ class TrackWidget(QFrame):
         # NO layout manager - we'll use absolute positioning
         
         self.layout.addWidget(self.content_area)
+
+        self.hidden_label = QLabel("Hidden", self.content_area)
+        self.hidden_label.setStyleSheet("color: #71717a; font-size: 12px; padding-left: 12px;")
+        self.hidden_label.move(0, 35)
+        self.hidden_label.hide()
         
         self.refresh()
 
@@ -92,6 +106,13 @@ class TrackWidget(QFrame):
         return btn
 
     def refresh(self):
+        self.update_state_ui()
+
+        if self.track.is_hidden:
+            self.content_area.setVisible(True)
+        else:
+            self.content_area.setVisible(True)
+
         # Clear existing clips (delete child widgets of content_area)
         for child in self.content_area.findChildren(ClipWidget):
             child.setParent(None)
@@ -110,6 +131,11 @@ class TrackWidget(QFrame):
         # Set content area minimum width
         min_width = max(500, int(max_end_time * self.pixels_per_second) + 100)
         self.content_area.setMinimumWidth(min_width)
+
+        if self.track.is_hidden:
+            self.hidden_label.show()
+            return
+        self.hidden_label.hide()
         
         # Position clips using ABSOLUTE POSITIONING (not layout!)
         for clip in sorted_clips:
@@ -126,6 +152,35 @@ class TrackWidget(QFrame):
             widget.clicked.connect(self.on_clip_clicked)
             widget.clicked_at.connect(self.on_clip_clicked_at)
             widget.show()
+
+    def update_state_ui(self):
+        muted = getattr(self.track, "is_muted", False)
+        if self.mute_btn.isChecked() != muted:
+            self.mute_btn.setChecked(muted)
+        if self.lock_btn.isChecked() != self.track.is_locked:
+            self.lock_btn.setChecked(self.track.is_locked)
+        if self.hide_btn.isChecked() != self.track.is_hidden:
+            self.hide_btn.setChecked(self.track.is_hidden)
+
+        if self.track.is_hidden:
+            self.name_label.setStyleSheet("color: #71717a; font-weight: bold; font-size: 12px;")
+        else:
+            self.name_label.setStyleSheet("color: #E0E0E0; font-weight: bold; font-size: 12px;")
+
+    def on_mute_toggled(self, checked: bool):
+        self.track.is_muted = checked
+        for clip in self.track.clips:
+            clip.muted = checked
+        self.update_state_ui()
+        self.track_audio_changed.emit()
+
+    def on_lock_toggled(self, checked: bool):
+        self.track.is_locked = checked
+        self.update_state_ui()
+
+    def on_hide_toggled(self, checked: bool):
+        self.track.is_hidden = checked
+        self.refresh()
 
     def on_clip_clicked(self, clip_widget):
         self.clip_selected.emit(clip_widget.clip)

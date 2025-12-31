@@ -93,6 +93,7 @@ class EditPage(QWidget):
             
             # Auto-add video to timeline when dropped on Player
             self.player.media_dropped.connect(timeline_widget.add_clip_from_file)
+            timeline_widget.track_audio_changed.connect(self.player.apply_audio_state)
 
         self.inspector.clip_changed.connect(self.player.update_overlay)
         self.player.transform_changed.connect(lambda: self.inspector.set_clip(self.player.current_clip))

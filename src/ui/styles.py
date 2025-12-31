@@ -121,6 +121,38 @@ QLineEdit:focus, QSpinBox:focus, QDoubleSpinBox:focus {{
     border: 1px solid {COLORS['accent']};
 }}
 
+/* --- ComboBox --- */
+QComboBox {{
+    background-color: {COLORS['bg_canvas']};
+    border: 1px solid {COLORS['border']};
+    border-radius: 4px;
+    padding: 6px 10px;
+    min-height: 28px;
+    color: {COLORS['text_primary']};
+}}
+QComboBox:focus {{
+    border: 1px solid {COLORS['accent']};
+}}
+QComboBox QAbstractItemView {{
+    background-color: {COLORS['bg_panel']};
+    color: {COLORS['text_primary']};
+    selection-background-color: {COLORS['accent']};
+    selection-color: #ffffff;
+    border: 1px solid {COLORS['border']};
+    outline: 0;
+    padding: 4px 0;
+}}
+QComboBox::item {{
+    background-color: {COLORS['bg_panel']};
+    color: {COLORS['text_primary']};
+    padding: 6px 10px;
+    min-height: 24px;
+}}
+QComboBox::item:selected {{
+    background-color: {COLORS['accent']};
+    color: #ffffff;
+}}
+
 /* --- Sliders --- */
 QSlider::groove:horizontal {{
     border: 1px solid {COLORS['border']};
