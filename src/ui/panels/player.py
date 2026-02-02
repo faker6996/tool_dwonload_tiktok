@@ -20,6 +20,7 @@ from PyQt6.QtMultimedia import QMediaPlayer, QAudioOutput
 from PyQt6.QtMultimediaWidgets import QGraphicsVideoItem
 from src.core.timeline.clip import Clip
 from src.core.timeline.sticker import StickerClip
+from src.ui.widgets.bounded_combobox import BoundedComboBox
 from contextlib import contextmanager
 import json
 
@@ -512,6 +513,7 @@ class Player(QFrame):
         self.media_player = QMediaPlayer()
         self.audio_output = QAudioOutput()
         self.media_player.setAudioOutput(self.audio_output)
+        self._apply_playback_rate()
         
         # Video Item
         self.video_item = QGraphicsVideoItem()
@@ -769,6 +771,25 @@ class Player(QFrame):
         self.duration_label = QLabel("00:00:00:00")
         self.duration_label.setStyleSheet("font-family: 'JetBrains Mono', monospace; color: #71717a;")
         controls_layout.addWidget(self.duration_label)
+
+        # Playback Speed (preview only)
+        speed_label = QLabel("Speed:")
+        speed_label.setStyleSheet("color: #a1a1aa;")
+        controls_layout.addWidget(speed_label)
+
+        self.playback_rate_combo = BoundedComboBox()
+        self.playback_rate_combo.setFixedWidth(90)
+        self.playback_rate_combo.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.playback_rate_combo.setToolTip("Playback speed (preview only)")
+        self.playback_rate_combo.addItem("0.5x", 0.5)
+        self.playback_rate_combo.addItem("0.75x", 0.75)
+        self.playback_rate_combo.addItem("1.0x", 1.0)
+        self.playback_rate_combo.addItem("1.25x", 1.25)
+        self.playback_rate_combo.addItem("1.5x", 1.5)
+        self.playback_rate_combo.addItem("2.0x", 2.0)
+        self.playback_rate_combo.setCurrentIndex(2)  # 1.0x
+        self.playback_rate_combo.currentIndexChanged.connect(self._apply_playback_rate)
+        controls_layout.addWidget(self.playback_rate_combo)
         
         # Zoom Controls
         zoom_layout = QHBoxLayout()
@@ -946,6 +967,7 @@ class Player(QFrame):
         
         # Play Media
         self.media_player.setSource(QUrl.fromLocalFile(clip.asset_id))
+        self._apply_playback_rate()
         if autoplay:
             self.media_player.play()
             self.btn_play.setText("⏸")
@@ -990,6 +1012,20 @@ class Player(QFrame):
         else:
             self.media_player.play()
             self.btn_play.setText("⏸")
+
+    def _apply_playback_rate(self):
+        """Apply preview-only playback speed to the media player."""
+        rate = 1.0
+        try:
+            combo = getattr(self, "playback_rate_combo", None)
+            if combo is not None:
+                data = combo.currentData()
+                if data is not None:
+                    rate = float(data)
+            self.media_player.setPlaybackRate(rate)
+        except Exception:
+            # Keep UI responsive even if backend rejects the rate.
+            pass
 
     def on_position_changed(self, position):
         self.scrubber.setValue(position)

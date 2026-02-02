@@ -157,6 +157,26 @@ class DownloadPage(QWidget):
         controls_layout.addWidget(self.play_pause_btn)
         
         controls_layout.addStretch()
+
+        speed_label = QLabel("Speed:")
+        speed_label.setStyleSheet("color: #a1a1aa;")
+        controls_layout.addWidget(speed_label)
+
+        self.playback_rate_combo = BoundedComboBox()
+        self.playback_rate_combo.setFixedWidth(90)
+        self.playback_rate_combo.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.playback_rate_combo.setToolTip("Playback speed (preview only)")
+        self.playback_rate_combo.addItem("0.5x", 0.5)
+        self.playback_rate_combo.addItem("0.75x", 0.75)
+        self.playback_rate_combo.addItem("1.0x", 1.0)
+        self.playback_rate_combo.addItem("1.25x", 1.25)
+        self.playback_rate_combo.addItem("1.5x", 1.5)
+        self.playback_rate_combo.addItem("2.0x", 2.0)
+        self.playback_rate_combo.setCurrentIndex(2)  # 1.0x
+        self.playback_rate_combo.currentIndexChanged.connect(self._apply_playback_rate)
+        self.playback_rate_combo.setEnabled(False)
+        controls_layout.addWidget(self.playback_rate_combo)
+
         preview_layout.addLayout(controls_layout)
         
         single_layout.addWidget(self.preview_frame)
@@ -340,6 +360,9 @@ class DownloadPage(QWidget):
         self.url_input.setEnabled(False)
         self.download_btn.setEnabled(False)
         self.media_player.stop()
+        self.play_pause_btn.setEnabled(False)
+        if hasattr(self, "playback_rate_combo"):
+            self.playback_rate_combo.setEnabled(False)
         self.temp_preview_path = None
         
         self.loading_overlay.set_text("🔍 Analyzing URL...")
@@ -376,17 +399,35 @@ class DownloadPage(QWidget):
             self.temp_preview_path = path
             self.download_btn.setEnabled(True)
             self.play_pause_btn.setEnabled(True)
+            if hasattr(self, "playback_rate_combo"):
+                self.playback_rate_combo.setEnabled(True)
             
             self.media_player.setSource(QUrl.fromLocalFile(path))
+            self._apply_playback_rate()
             self.media_player.play()
         else:
             self.status_label.setText("Could not load preview.")
             QMessageBox.warning(self, "Preview Error", "Could not load video preview, but you can try to download it directly.")
             self.download_btn.setEnabled(True)
+            if hasattr(self, "playback_rate_combo"):
+                self.playback_rate_combo.setEnabled(False)
 
     def reset_ui_state(self):
         self.analyze_btn.setEnabled(True)
         self.url_input.setEnabled(True)
+
+    def _apply_playback_rate(self):
+        """Apply preview-only playback speed to the media player."""
+        rate = 1.0
+        try:
+            if hasattr(self, "playback_rate_combo"):
+                data = self.playback_rate_combo.currentData()
+                if data is not None:
+                    rate = float(data)
+            self.media_player.setPlaybackRate(rate)
+        except Exception:
+            # Keep UI responsive even if backend rejects the rate.
+            pass
 
     def download_video(self):
         if not self.current_video_url:

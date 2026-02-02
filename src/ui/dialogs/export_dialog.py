@@ -45,6 +45,7 @@ class ExportDialog(QDialog):
         settings_layout.addWidget(QLabel("Resolution:"))
         self.res_combo = BoundedComboBox()
         self.res_combo.addItems([
+            "Original (keep source)",
             "1080x1920 (TikTok/Reels)",  # Vertical
             "1920x1080 (Full HD)",        # Horizontal
             "720x1280 (HD Vertical)",     # Vertical
@@ -57,8 +58,20 @@ class ExportDialog(QDialog):
         # FPS
         settings_layout.addWidget(QLabel("FPS:"))
         self.fps_combo = BoundedComboBox()
-        self.fps_combo.addItems(["30", "60", "24"])
+        self.fps_combo.addItems(["Original (keep source)", "30", "60", "24"])
         settings_layout.addWidget(self.fps_combo)
+
+        # Speed
+        settings_layout.addWidget(QLabel("Speed:"))
+        self.speed_combo = BoundedComboBox()
+        self.speed_combo.addItem("0.5x", 0.5)
+        self.speed_combo.addItem("0.75x", 0.75)
+        self.speed_combo.addItem("1.0x", 1.0)
+        self.speed_combo.addItem("1.25x", 1.25)
+        self.speed_combo.addItem("1.5x", 1.5)
+        self.speed_combo.addItem("2.0x", 2.0)
+        self.speed_combo.setCurrentIndex(2)  # 1.0x
+        settings_layout.addWidget(self.speed_combo)
         
         layout.addLayout(settings_layout)
         
@@ -227,11 +240,15 @@ class ExportDialog(QDialog):
 
         # Extract just resolution numbers (e.g. "1080x1920 (TikTok/Reels)" -> "1080x1920")
         resolution_text = self.res_combo.currentText()
-        resolution = resolution_text.split(" ")[0]  # Get "1080x1920" from "1080x1920 (TikTok/Reels)"
+        if resolution_text.startswith("Original"):
+            resolution = "original"
+        else:
+            resolution = resolution_text.split(" ")[0]  # Get "1080x1920" from "1080x1920 (TikTok/Reels)"
         
         settings = {
             "resolution": resolution,
-            "fps": int(self.fps_combo.currentText())
+            "fps": "original" if self.fps_combo.currentText().startswith("Original") else int(self.fps_combo.currentText()),
+            "speed": float(self.speed_combo.currentData() or 1.0),
         }
         
         # UI State - show loading

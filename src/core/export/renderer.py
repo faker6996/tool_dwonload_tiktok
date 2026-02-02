@@ -59,7 +59,11 @@ class RenderEngine(QObject):
         audio_tracks: List of audio clips to mix (path, start_time, duration)
         """
         self.output_path = output_path
-        self.settings.update(settings)
+        # Playback rate is a preview-only UI concern; never bake it into export settings.
+        safe_settings = dict(settings or {})
+        safe_settings.pop("playback_rate", None)
+        safe_settings.pop("preview_playback_rate", None)
+        self.settings.update(safe_settings)
         self.stickers = stickers or []
         self.subtitles = subtitles or []
         self.audio_tracks = audio_tracks or []
@@ -148,13 +152,65 @@ class RenderEngine(QObject):
                 f.write(f"file '{escaped_path}'\n")
 
         resolution = self.settings.get("resolution", "1920x1080")
-        fps = int(self.settings.get("fps", 30))
-        
-        # Parse resolution for sticker positioning
+        fps_setting = self.settings.get("fps", 30)
+        speed_setting = self.settings.get("speed", self.settings.get("export_speed", 1.0))
         try:
-            res_w, res_h = map(int, resolution.split("x"))
-        except:
-            res_w, res_h = 1920, 1080
+            speed = float(speed_setting)
+        except Exception:
+            speed = 1.0
+        if speed <= 0:
+            speed = 1.0
+
+        def get_source_resolution(video_path: str) -> Optional[Tuple[int, int]]:
+            try:
+                import cv2  # type: ignore
+            except Exception:
+                return None
+
+            cap = cv2.VideoCapture(video_path)
+            try:
+                if not cap.isOpened():
+                    return None
+                width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH) or 0)
+                height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT) or 0)
+                if width > 0 and height > 0:
+                    return width, height
+                return None
+            finally:
+                cap.release()
+
+        def source_has_audio(video_path: str) -> bool:
+            if not video_path:
+                return False
+            try:
+                probe = subprocess.run(
+                    [self.ffmpeg_path, "-hide_banner", "-i", video_path],
+                    capture_output=True,
+                    text=True,
+                )
+                stderr = (probe.stderr or "") + (probe.stdout or "")
+                return "Audio:" in stderr
+            except Exception:
+                return False
+
+        # Parse resolution for sticker/subtitle positioning. If "original", detect from first clip.
+        res_w, res_h = 1920, 1080
+        first_path = ""
+        for clip in clips:
+            p = clip.get("path")
+            if p:
+                first_path = p
+                break
+
+        if isinstance(resolution, str) and resolution.lower() == "original":
+            detected = get_source_resolution(first_path) if first_path else None
+            if detected:
+                res_w, res_h = detected
+        else:
+            try:
+                res_w, res_h = map(int, str(resolution).split("x"))
+            except Exception:
+                res_w, res_h = 1920, 1080
 
         # Create sticker images and prepare overlay data
         sticker_inputs = []  # Additional input files for stickers
@@ -251,6 +307,10 @@ class RenderEngine(QObject):
                 print(f"Error creating subtitles: {e}")
         if subtitle_file:
             temp_files.append(subtitle_file)
+
+        # Export speed (video) - apply after subtitle burn-in so subtitle timing scales with speed.
+        if abs(speed - 1.0) > 1e-6:
+            video_filters.append(f"setpts=PTS/{speed:g}")
         
         # Build audio mixing if we have TTS/audio tracks
         audio_tracks_list = getattr(self, "audio_tracks", [])
@@ -271,12 +331,15 @@ class RenderEngine(QObject):
         # Add audio inputs after sticker inputs
         cmd.extend(audio_inputs)
 
-        cmd.extend([
-            "-r",
-            str(fps),
-            "-s",
-            resolution,
-        ])
+        if not (isinstance(fps_setting, str) and fps_setting.lower() == "original"):
+            try:
+                fps_value = float(fps_setting)
+                if fps_value > 0:
+                    cmd.extend(["-r", str(fps_value)])
+            except Exception:
+                cmd.extend(["-r", "30"])
+        if not (isinstance(resolution, str) and resolution.lower() == "original"):
+            cmd.extend(["-s", str(resolution)])
         
         # Build filter_complex if needed
         needs_filter_complex = bool(video_filters or sticker_inputs or audio_input_files)
@@ -304,16 +367,36 @@ class RenderEngine(QObject):
 
             # Audio chain
             audio_output_label = ""
+            has_source_audio = source_has_audio(first_path)
+            wants_audio_speed = abs(speed - 1.0) > 1e-6
+            audio_base_label = ""
+
             if audio_input_files:
                 audio_base_index = 1 + len(sticker_inputs)
-                filter_parts.append("[0:a]volume=0.5[orig]")
-                mix_inputs = "[orig]" + "".join(
+                mix_labels = []
+                if has_source_audio:
+                    filter_parts.append("[0:a]volume=0.5[orig]")
+                    mix_labels.append("[orig]")
+                mix_labels.extend(
                     f"[{audio_base_index + i}:a]" for i in range(len(audio_input_files))
                 )
-                filter_parts.append(
-                    f"{mix_inputs}amix=inputs={len(audio_input_files) + 1}:duration=longest[aout]"
-                )
-                audio_output_label = "[aout]"
+
+                if len(mix_labels) == 1:
+                    filter_parts.append(f"{mix_labels[0]}anull[aout]")
+                    audio_base_label = "[aout]"
+                else:
+                    filter_parts.append(
+                        f"{''.join(mix_labels)}amix=inputs={len(mix_labels)}:duration=longest[aout]"
+                    )
+                    audio_base_label = "[aout]"
+            elif wants_audio_speed and has_source_audio:
+                audio_base_label = "[0:a]"
+
+            if wants_audio_speed and audio_base_label:
+                filter_parts.append(f"{audio_base_label}atempo={speed:g}[aout_speed]")
+                audio_output_label = "[aout_speed]"
+            else:
+                audio_output_label = audio_base_label
 
             cmd.extend(["-filter_complex", ";".join(filter_parts)])
 
