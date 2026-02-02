@@ -6,9 +6,10 @@ import json
 from PyQt6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit,
     QPushButton, QTabWidget, QWidget, QGroupBox, QCheckBox,
-    QComboBox, QMessageBox
+    QMessageBox
 )
 from PyQt6.QtCore import Qt
+from src.ui.widgets.bounded_combobox import BoundedComboBox
 
 
 CONFIG_PATH = os.path.expanduser("~/.tiktok_downloader_config.json")
@@ -103,7 +104,7 @@ class SettingsDialog(QDialog):
         
         provider_row = QHBoxLayout()
         provider_row.addWidget(QLabel("Provider mặc định:"))
-        self.default_provider_combo = QComboBox()
+        self.default_provider_combo = BoundedComboBox()
         self.default_provider_combo.addItems([
             "Google Translate (Miễn phí)",
             "Gemini Pro",
@@ -124,7 +125,7 @@ class SettingsDialog(QDialog):
         
         model_row = QHBoxLayout()
         model_row.addWidget(QLabel("Model:"))
-        self.whisper_model_combo = QComboBox()
+        self.whisper_model_combo = BoundedComboBox()
         self.whisper_model_combo.addItems([
             "tiny (Nhanh, kém chính xác)",
             "base (Cân bằng ✅)",

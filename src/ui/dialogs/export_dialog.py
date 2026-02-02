@@ -5,7 +5,6 @@ from PyQt6.QtWidgets import (
     QLabel,
     QLineEdit,
     QPushButton,
-    QComboBox,
     QFileDialog,
     QProgressBar,
     QMessageBox,
@@ -13,6 +12,7 @@ from PyQt6.QtWidgets import (
 )
 from PyQt6.QtCore import Qt
 from src.core.export.renderer import render_engine
+from src.ui.widgets.bounded_combobox import BoundedComboBox
 
 class ExportDialog(QDialog):
     def __init__(self, parent=None):
@@ -43,7 +43,7 @@ class ExportDialog(QDialog):
         
         # Resolution
         settings_layout.addWidget(QLabel("Resolution:"))
-        self.res_combo = QComboBox()
+        self.res_combo = BoundedComboBox()
         self.res_combo.addItems([
             "1080x1920 (TikTok/Reels)",  # Vertical
             "1920x1080 (Full HD)",        # Horizontal
@@ -56,7 +56,7 @@ class ExportDialog(QDialog):
         
         # FPS
         settings_layout.addWidget(QLabel("FPS:"))
-        self.fps_combo = QComboBox()
+        self.fps_combo = BoundedComboBox()
         self.fps_combo.addItems(["30", "60", "24"])
         settings_layout.addWidget(self.fps_combo)
         
@@ -279,4 +279,3 @@ class ExportDialog(QDialog):
             self.progress_bar.setFormat("Error")
             self.time_label.setText(message or "Unknown error")
             QMessageBox.critical(self, "Export Video", message or "Export failed.")
-

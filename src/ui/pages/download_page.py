@@ -1,12 +1,13 @@
 from PyQt6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QLineEdit, QPushButton, 
                              QLabel, QFrame, QProgressBar, QFileDialog, QMessageBox,
-                             QGraphicsOpacityEffect, QComboBox, QTableWidget, QTableWidgetItem,
+                             QGraphicsOpacityEffect, QTableWidget, QTableWidgetItem,
                              QHeaderView, QCheckBox, QSpinBox, QGroupBox)
 from PyQt6.QtCore import Qt, QUrl, QTimer, QPropertyAnimation, QEasingCurve
 from PyQt6.QtGui import QMovie, QPainter, QColor, QFont
 from PyQt6.QtMultimedia import QMediaPlayer, QAudioOutput
 from PyQt6.QtMultimediaWidgets import QVideoWidget
 from src.core.manager import DownloaderManager
+from src.ui.widgets.bounded_combobox import BoundedComboBox
 from ..threads import AnalyzerThread, PreviewDownloaderThread, DownloaderThread, ChannelScraperThread
 import os
 
@@ -99,7 +100,7 @@ class DownloadPage(QWidget):
         mode_layout = QHBoxLayout()
         mode_layout.addWidget(QLabel("Mode:"))
         
-        self.mode_combo = QComboBox()
+        self.mode_combo = BoundedComboBox()
         self.mode_combo.addItems([
             "📹 Single Video",
             "📂 Bulk from Channel",

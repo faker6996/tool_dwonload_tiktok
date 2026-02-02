@@ -2,10 +2,11 @@
 Dialog for configuring subtitle removal settings.
 """
 from PyQt6.QtWidgets import (
-    QDialog, QVBoxLayout, QHBoxLayout, QLabel, QComboBox, 
+    QDialog, QVBoxLayout, QHBoxLayout, QLabel,
     QPushButton, QGroupBox, QSpinBox, QSlider, QCheckBox
 )
 from PyQt6.QtCore import Qt
+from src.ui.widgets.bounded_combobox import BoundedComboBox
 
 
 class SubtitleRemovalDialog(QDialog):
@@ -26,7 +27,7 @@ class SubtitleRemovalDialog(QDialog):
         mode_group = QGroupBox("Chế độ phát hiện")
         mode_layout = QVBoxLayout(mode_group)
         
-        self.mode_combo = QComboBox()
+        self.mode_combo = BoundedComboBox()
         self.mode_combo.addItems([
             "🔍 Tự động (Bottom 15%)",
             "📐 Tùy chỉnh vùng",
@@ -59,7 +60,7 @@ class SubtitleRemovalDialog(QDialog):
         algo_group = QGroupBox("Phương pháp xoá")
         algo_layout = QVBoxLayout(algo_group)
         
-        self.algo_combo = QComboBox()
+        self.algo_combo = BoundedComboBox()
         self.algo_combo.addItems([
             "🌫️ Blur (FFmpeg - Nhanh ⚡)",
             "⬛ Black out (FFmpeg - Nhanh ⚡)",

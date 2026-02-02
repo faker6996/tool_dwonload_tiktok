@@ -7,7 +7,6 @@ from PyQt6.QtWidgets import (
     QSpinBox,
     QDoubleSpinBox,
     QSlider,
-    QComboBox,
     QHBoxLayout,
     QScrollArea,
     QAbstractSpinBox,
@@ -15,6 +14,7 @@ from PyQt6.QtWidgets import (
 )
 from PyQt6.QtCore import Qt, pyqtSignal
 from contextlib import contextmanager
+from src.ui.widgets.bounded_combobox import BoundedComboBox
 
 
 class NoWheelSpinBox(QSpinBox):
@@ -92,7 +92,7 @@ class Inspector(QFrame):
         aspect_layout.setSpacing(8)
         aspect_label = QLabel("Aspect Ratio")
         aspect_label.setStyleSheet("color: #a1a1aa; font-size: 12px;")
-        self.aspect_combo = QComboBox()
+        self.aspect_combo = BoundedComboBox()
         self.aspect_combo.addItems(["Original", "16:9", "9:16", "4:3", "1:1"])
         self.aspect_combo.currentTextChanged.connect(self.on_aspect_ratio_changed)
         aspect_layout.addWidget(aspect_label)
@@ -131,7 +131,7 @@ class Inspector(QFrame):
         blend_layout.setSpacing(8)
         blend_label = QLabel("Blend Mode")
         blend_label.setStyleSheet("color: #a1a1aa; font-size: 12px;")
-        self.blend_combo = QComboBox()
+        self.blend_combo = BoundedComboBox()
         self.blend_combo.addItems(["Normal", "Multiply", "Screen", "Overlay", "Darken", "Lighten"])
         self.blend_combo.currentTextChanged.connect(self.update_clip_transform)
         blend_layout.addWidget(blend_label)

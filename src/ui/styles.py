@@ -141,14 +141,18 @@ QComboBox QAbstractItemView {{
     border: 1px solid {COLORS['border']};
     outline: 0;
     padding: 4px 0;
+    max-height: 280px;
 }}
-QComboBox::item {{
-    background-color: {COLORS['bg_panel']};
+QComboBox QAbstractItemView::item {{
+    background-color: transparent;
     color: {COLORS['text_primary']};
     padding: 6px 10px;
-    min-height: 24px;
+    height: 28px;
 }}
-QComboBox::item:selected {{
+QComboBox QAbstractItemView::item:hover {{
+    background-color: rgba(255, 255, 255, 0.05);
+}}
+QComboBox QAbstractItemView::item:selected {{
     background-color: {COLORS['accent']};
     color: #ffffff;
 }}

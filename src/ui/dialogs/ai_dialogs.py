@@ -1,8 +1,9 @@
 from PyQt6.QtWidgets import (
-    QDialog, QVBoxLayout, QHBoxLayout, QLabel, QComboBox, 
+    QDialog, QVBoxLayout, QHBoxLayout, QLabel,
     QPushButton, QTextEdit, QProgressBar, QGroupBox, QLineEdit
 )
 from PyQt6.QtCore import Qt
+from src.ui.widgets.bounded_combobox import BoundedComboBox
 
 
 class CaptionDialog(QDialog):
@@ -26,7 +27,7 @@ class CaptionDialog(QDialog):
         mode_group = QGroupBox("Chế độ")
         mode_layout = QVBoxLayout(mode_group)
         
-        self.mode_combo = QComboBox()
+        self.mode_combo = BoundedComboBox()
         self.mode_combo.addItems([
             "📝 Transcribe (Tạo sub từ audio)",
             "🌐 Translate (Dịch sub sang ngôn ngữ khác)",
@@ -49,7 +50,7 @@ class CaptionDialog(QDialog):
         source_layout = QHBoxLayout(self.source_group)
         
         source_layout.addWidget(QLabel("Ngôn ngữ:"))
-        self.source_lang_combo = QComboBox()
+        self.source_lang_combo = BoundedComboBox()
         self.source_lang_combo.addItems([
             "🔄 Tự động phát hiện",
             "🇻🇳 Tiếng Việt",
@@ -69,7 +70,7 @@ class CaptionDialog(QDialog):
         target_layout = QHBoxLayout(self.target_group)
         
         target_layout.addWidget(QLabel("Dịch sang:"))
-        self.target_lang_combo = QComboBox()
+        self.target_lang_combo = BoundedComboBox()
         self.target_lang_combo.addItems([
             "🇻🇳 Tiếng Việt",
             "🇺🇸 English",
@@ -93,7 +94,7 @@ class CaptionDialog(QDialog):
         
         provider_row = QHBoxLayout()
         provider_row.addWidget(QLabel("Provider:"))
-        self.provider_combo = QComboBox()
+        self.provider_combo = BoundedComboBox()
         self.provider_combo.addItems([
             "Google Translate (Miễn phí)",
             "Gemini Pro",
@@ -128,7 +129,7 @@ class CaptionDialog(QDialog):
         
         whisper_row = QHBoxLayout()
         whisper_row.addWidget(QLabel("Engine:"))
-        self.whisper_engine_combo = QComboBox()
+        self.whisper_engine_combo = BoundedComboBox()
         self.whisper_engine_combo.addItems([
             "💻 Local (MLX/CPU - Miễn phí)",
             "☁️ OpenAI API (Nhanh, $0.006/phút)",
@@ -162,7 +163,7 @@ class CaptionDialog(QDialog):
         # Algorithm selection
         algo_row = QHBoxLayout()
         algo_row.addWidget(QLabel("Phương pháp:"))
-        self.remove_algo_combo = QComboBox()
+        self.remove_algo_combo = BoundedComboBox()
         self.remove_algo_combo.addItems([
             "🌫️ Blur (Nhanh ⚡)",
             "⬛ Black (Nhanh ⚡)",
@@ -394,7 +395,7 @@ class TTSDialog(QDialog):
         voice_layout = QHBoxLayout(voice_group)
         
         voice_layout.addWidget(QLabel("Giọng:"))
-        self.voice_combo = QComboBox()
+        self.voice_combo = BoundedComboBox()
         self.voice_combo.addItems([
             "🇻🇳 Hoài My (Nữ - Việt Nam)",
             "🇻🇳 Nam Minh (Nam - Việt Nam)",

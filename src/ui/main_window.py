@@ -2,7 +2,6 @@ import sys
 from PyQt6.QtWidgets import QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QFrame, QApplication, QStackedWidget, QToolButton, QButtonGroup
 from PyQt6.QtCore import Qt, QSize
 import qtawesome as qta
-from src.ui.styles import DARK_THEME
 from src.ui.pages.edit_page import EditPage
 from src.ui.pages.download_page import DownloadPage
 from src.ui.pages.document_page import DocumentPage
@@ -13,9 +12,6 @@ class MainWindow(QMainWindow):
         self.setWindowTitle("Universal Video Downloader & Editor")
         self.resize(1280, 720)
         self.setMinimumSize(1024, 600)
-        
-        # Apply Global Theme
-        self.setStyleSheet(DARK_THEME)
         
         self.setup_ui()
         
@@ -289,4 +285,3 @@ if __name__ == "__main__":
     window = MainWindow()
     window.show()
     sys.exit(app.exec())
-
