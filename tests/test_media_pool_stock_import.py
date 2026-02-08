@@ -40,6 +40,19 @@ class TestMediaPoolStockImport(unittest.TestCase):
         with patch.object(pool, "import_media") as import_media_mock:
             pool.on_stock_download_finished(True, "/tmp/stock_file.mp4", {"id": "x"})
         import_media_mock.assert_called_once_with(["/tmp/stock_file.mp4"])
+        self.assertIn("Importing", pool.stock_status_label.text())
+
+    def test_on_stock_download_finished_handles_cancelled_state(self):
+        class FakeThread:
+            cancel_requested = True
+
+        pool = MediaPool()
+        pool.stock_download_thread = FakeThread()
+        with patch.object(pool, "import_media") as import_media_mock:
+            pool.on_stock_download_finished(False, "", {"id": "x"})
+
+        import_media_mock.assert_not_called()
+        self.assertIn("cancelled", pool.stock_status_label.text().lower())
 
     def test_download_stock_item_uses_cached_file_without_thread(self):
         with patch.dict(os.environ, {"HOME": self.temp_home}):
@@ -60,6 +73,33 @@ class TestMediaPoolStockImport(unittest.TestCase):
 
         import_media_mock.assert_called_once_with([cached_path])
         thread_mock.assert_not_called()
+
+    def test_stock_download_progress_updates_status_label(self):
+        pool = MediaPool()
+        pool.on_stock_download_progress(45)
+        self.assertIn("45%", pool.stock_status_label.text())
+
+    def test_cancel_stock_download_updates_status_and_requests_cancel(self):
+        class FakeThread:
+            def __init__(self):
+                self.cancel_called = False
+
+            def isRunning(self):
+                return True
+
+            def cancel(self):
+                self.cancel_called = True
+
+        pool = MediaPool()
+        fake_thread = FakeThread()
+        pool.stock_download_thread = fake_thread
+        pool.cancel_stock_btn.setEnabled(True)
+
+        pool.cancel_stock_download()
+
+        self.assertTrue(fake_thread.cancel_called)
+        self.assertFalse(pool.cancel_stock_btn.isEnabled())
+        self.assertIn("Cancelling", pool.stock_status_label.text())
 
 
 if __name__ == "__main__":

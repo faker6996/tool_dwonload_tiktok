@@ -1,6 +1,6 @@
 import requests
 import os
-from typing import List, Dict, Optional
+from typing import List, Dict, Optional, Callable
 from ..logging_utils import get_logger
 
 logger = get_logger(__name__)
@@ -104,7 +104,14 @@ class StockAPI:
         candidates.sort(key=quality_key)
         return candidates[0]
 
-    def download_media(self, media_id: str, url: str, destination: str) -> str:
+    def download_media(
+        self,
+        media_id: str,
+        url: str,
+        destination: str,
+        progress_callback: Optional[Callable[[int, int], None]] = None,
+        should_abort: Optional[Callable[[], bool]] = None,
+    ) -> str:
         """
         Download media file from URL.
         """
@@ -118,10 +125,24 @@ class StockAPI:
         try:
             with requests.get(url, stream=True, timeout=60) as response:
                 response.raise_for_status()
+                total_bytes = int((response.headers or {}).get("Content-Length", 0) or 0)
+                bytes_written = 0
+                if progress_callback:
+                    progress_callback(0, total_bytes)
+
                 with open(temp_destination, "wb") as output_file:
                     for chunk in response.iter_content(chunk_size=1024 * 1024):
+                        if should_abort and should_abort():
+                            raise RuntimeError("Download cancelled")
                         if chunk:
                             output_file.write(chunk)
+                            bytes_written += len(chunk)
+                            if progress_callback:
+                                progress_callback(bytes_written, total_bytes)
+
+                if progress_callback:
+                    progress_callback(bytes_written, total_bytes)
+
             os.replace(temp_destination, destination)
             return destination
         except Exception as e:

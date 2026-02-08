@@ -99,12 +99,21 @@ class IngestionThread(QThread):
 class StockDownloadThread(QThread):
     """Download stock media in background to avoid blocking UI."""
 
+    progress = pyqtSignal(int)  # percent (0-100)
     finished = pyqtSignal(bool, str, dict)  # success, file_path, stock_item
 
     def __init__(self, stock_item: dict, destination_path: str):
         super().__init__()
         self.stock_item = stock_item
         self.destination_path = destination_path
+        self._cancel_requested = False
+
+    @property
+    def cancel_requested(self) -> bool:
+        return self._cancel_requested
+
+    def cancel(self):
+        self._cancel_requested = True
 
     def run(self):
         try:
@@ -112,12 +121,26 @@ class StockDownloadThread(QThread):
 
             media_id = str(self.stock_item.get("id", "stock_item"))
             url = str(self.stock_item.get("url", "")).strip()
-            if not url:
+            if not url or self._cancel_requested:
                 self.finished.emit(False, "", self.stock_item)
                 return
 
-            saved_path = stock_api.download_media(media_id, url, self.destination_path)
-            success = bool(saved_path and os.path.exists(saved_path))
+            def _on_progress(downloaded: int, total: int):
+                if total > 0:
+                    percent = int(max(0, min(100, (downloaded * 100) / total)))
+                    self.progress.emit(percent)
+
+            self.progress.emit(0)
+            saved_path = stock_api.download_media(
+                media_id,
+                url,
+                self.destination_path,
+                progress_callback=_on_progress,
+                should_abort=lambda: self._cancel_requested,
+            )
+            success = bool(saved_path and os.path.exists(saved_path) and not self._cancel_requested)
+            if success:
+                self.progress.emit(100)
             self.finished.emit(success, saved_path or "", self.stock_item)
         except Exception:
             self.finished.emit(False, "", self.stock_item)

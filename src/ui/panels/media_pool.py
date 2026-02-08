@@ -133,6 +133,7 @@ class MediaPool(QWidget):
         super().__init__()
         self.setObjectName("panel") # Keep original object name for styling if needed
         self.setAcceptDrops(True) # Keep original drag/drop functionality
+        self._last_stock_status = "Stock ready."
         self.setup_ui()
         self.items_by_id = {}
         
@@ -178,10 +179,19 @@ class MediaPool(QWidget):
         self.import_stock_btn = QPushButton("Import Selected")
         self.import_stock_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self.import_stock_btn.clicked.connect(self.import_selected_stock)
+        self.cancel_stock_btn = QPushButton("Cancel")
+        self.cancel_stock_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.cancel_stock_btn.clicked.connect(self.cancel_stock_download)
+        self.cancel_stock_btn.setEnabled(False)
         stock_search_row.addWidget(self.stock_search_input)
         stock_search_row.addWidget(self.stock_search_btn)
         stock_search_row.addWidget(self.import_stock_btn)
+        stock_search_row.addWidget(self.cancel_stock_btn)
         header_layout.addLayout(stock_search_row)
+
+        self.stock_status_label = QLabel(self._last_stock_status)
+        self.stock_status_label.setStyleSheet("color: #a1a1aa; font-size: 11px;")
+        header_layout.addWidget(self.stock_status_label)
         
         layout.addWidget(header_container)
         
@@ -341,6 +351,7 @@ class MediaPool(QWidget):
         query = self.stock_search_input.text().strip()
         self.stock_list.clear()
         if not query:
+            self._set_stock_status("Enter a keyword to search stock media.")
             return
 
         results = stock_api.search_media(query, media_type="video")
@@ -349,6 +360,7 @@ class MediaPool(QWidget):
             list_item = QListWidgetItem(title)
             list_item.setData(Qt.ItemDataRole.UserRole, item)
             self.stock_list.addItem(list_item)
+        self._set_stock_status(f"Found {len(results)} stock result(s). Double-click to import.")
 
     def import_selected_stock(self):
         current_item = self.stock_list.currentItem()
@@ -363,28 +375,60 @@ class MediaPool(QWidget):
 
     def download_stock_item(self, stock_item: dict):
         if self.stock_download_thread and self.stock_download_thread.isRunning():
+            self._set_stock_status("A stock download is already in progress.")
             return
 
         destination_path = self._build_stock_destination(stock_item)
         if os.path.exists(destination_path) and os.path.getsize(destination_path) > 0:
+            self._set_stock_status("Using cached stock file.")
             self.import_media([destination_path])
             return
 
+        title = str(stock_item.get("title", "Stock media"))
+        self._set_stock_status(f"Downloading: {title}")
         self._set_stock_controls_enabled(False)
+        self.cancel_stock_btn.setEnabled(True)
         self.stock_download_thread = StockDownloadThread(stock_item, destination_path)
+        self.stock_download_thread.progress.connect(self.on_stock_download_progress)
         self.stock_download_thread.finished.connect(self.on_stock_download_finished)
         self.stock_download_thread.start()
 
+    def cancel_stock_download(self):
+        if not self.stock_download_thread or not self.stock_download_thread.isRunning():
+            self.cancel_stock_btn.setEnabled(False)
+            return
+        self._set_stock_status("Cancelling stock download...")
+        self.cancel_stock_btn.setEnabled(False)
+        self.stock_download_thread.cancel()
+
+    def on_stock_download_progress(self, percent: int):
+        self._set_stock_status(f"Downloading stock... {percent}%")
+
     def on_stock_download_finished(self, success: bool, file_path: str, stock_item: dict):
+        was_cancelled = bool(
+            self.stock_download_thread and getattr(self.stock_download_thread, "cancel_requested", False)
+        )
         self._set_stock_controls_enabled(True)
-        if success and file_path:
+        self.cancel_stock_btn.setEnabled(False)
+        self.stock_download_thread = None
+        if was_cancelled:
+            self._set_stock_status("Stock download cancelled.")
+        elif success and file_path:
+            self._set_stock_status("Stock media downloaded. Importing...")
             self.import_media([file_path])
+        else:
+            self._set_stock_status("Stock download failed. Please try another item.")
 
     def _set_stock_controls_enabled(self, enabled: bool):
         self.stock_search_input.setEnabled(enabled)
         self.stock_search_btn.setEnabled(enabled)
         self.stock_list.setEnabled(enabled)
         self.import_stock_btn.setEnabled(enabled)
+
+    def _set_stock_status(self, text: str):
+        self._last_stock_status = text
+        if hasattr(self, "stock_status_label"):
+            self.stock_status_label.setText(text)
 
     def _build_stock_destination(self, stock_item: dict) -> str:
         base_dir = os.path.join(os.path.expanduser("~"), ".video_downloader", "stock")

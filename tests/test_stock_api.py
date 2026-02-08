@@ -12,11 +12,12 @@ from src.core.api.stock_api import StockAPI
 
 
 class MockResponse:
-    def __init__(self, payload=None, chunks=None, status_code=200, raise_error=None):
+    def __init__(self, payload=None, chunks=None, status_code=200, raise_error=None, headers=None):
         self._payload = payload or {}
         self._chunks = chunks or []
         self.status_code = status_code
         self._raise_error = raise_error
+        self.headers = headers or {}
 
     def json(self):
         return self._payload
@@ -81,7 +82,7 @@ class TestStockAPI(unittest.TestCase):
     def test_download_media_success(self):
         destination = os.path.join(self.temp_dir, "stock.mp4")
         api = StockAPI()
-        response = MockResponse(chunks=[b"abc", b"def"])
+        response = MockResponse(chunks=[b"abc", b"def"], headers={"Content-Length": "6"})
 
         with patch("src.core.api.stock_api.requests.get", return_value=response):
             result = api.download_media("id1", "https://cdn.example/v.mp4", destination)
@@ -90,6 +91,46 @@ class TestStockAPI(unittest.TestCase):
         self.assertTrue(os.path.exists(destination))
         with open(destination, "rb") as output_file:
             self.assertEqual(output_file.read(), b"abcdef")
+
+    def test_download_media_reports_progress(self):
+        destination = os.path.join(self.temp_dir, "stock.mp4")
+        api = StockAPI()
+        response = MockResponse(chunks=[b"ab", b"cd", b"ef"], headers={"Content-Length": "6"})
+        events = []
+
+        with patch("src.core.api.stock_api.requests.get", return_value=response):
+            result = api.download_media(
+                "id3",
+                "https://cdn.example/v2.mp4",
+                destination,
+                progress_callback=lambda done, total: events.append((done, total)),
+            )
+
+        self.assertEqual(result, destination)
+        self.assertTrue(events)
+        self.assertEqual(events[-1], (6, 6))
+
+    def test_download_media_can_be_cancelled(self):
+        destination = os.path.join(self.temp_dir, "stock.mp4")
+        api = StockAPI()
+        response = MockResponse(chunks=[b"ab", b"cd"], headers={"Content-Length": "4"})
+        checks = {"count": 0}
+
+        def should_abort():
+            checks["count"] += 1
+            return checks["count"] >= 2
+
+        with patch("src.core.api.stock_api.requests.get", return_value=response):
+            result = api.download_media(
+                "id_cancel",
+                "https://cdn.example/cancel.mp4",
+                destination,
+                should_abort=should_abort,
+            )
+
+        self.assertEqual(result, "")
+        self.assertFalse(os.path.exists(destination))
+        self.assertFalse(os.path.exists(f"{destination}.part"))
 
     def test_download_media_failure_returns_empty(self):
         destination = os.path.join(self.temp_dir, "stock.mp4")
