@@ -4,10 +4,12 @@ from PyQt6.QtCore import Qt, QSize, QMimeData, QUrl, pyqtSignal
 from PyQt6.QtGui import QIcon, QDragEnterEvent, QDropEvent, QDrag, QPixmap, QColor, QBrush
 
 import os
+import re
+from urllib.parse import urlparse
 
 from src.core.state import state_manager
 from src.core.api.stock_api import stock_api
-from src.ui.threads import IngestionThread
+from src.ui.threads import IngestionThread, StockDownloadThread
 
 
 class AssetItemWidget(QWidget):
@@ -136,6 +138,7 @@ class MediaPool(QWidget):
         
         # Connect to State Manager (Keep original connection)
         state_manager.media_imported.connect(self.on_asset_imported)
+        self.stock_download_thread = None
 
     def setup_ui(self):
         layout = QVBoxLayout(self)
@@ -172,8 +175,12 @@ class MediaPool(QWidget):
         self.stock_search_btn = QPushButton("Search Stock")
         self.stock_search_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self.stock_search_btn.clicked.connect(self.search_stock)
+        self.import_stock_btn = QPushButton("Import Selected")
+        self.import_stock_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.import_stock_btn.clicked.connect(self.import_selected_stock)
         stock_search_row.addWidget(self.stock_search_input)
         stock_search_row.addWidget(self.stock_search_btn)
+        stock_search_row.addWidget(self.import_stock_btn)
         header_layout.addLayout(stock_search_row)
         
         layout.addWidget(header_container)
@@ -214,6 +221,7 @@ class MediaPool(QWidget):
 
         self.stock_list = QListWidget()
         self.stock_list.setMaximumHeight(140)
+        self.stock_list.itemDoubleClicked.connect(self.import_stock_item)
         self.stock_list.setStyleSheet("""
             QListWidget {
                 background-color: #111111;
@@ -341,3 +349,62 @@ class MediaPool(QWidget):
             list_item = QListWidgetItem(title)
             list_item.setData(Qt.ItemDataRole.UserRole, item)
             self.stock_list.addItem(list_item)
+
+    def import_selected_stock(self):
+        current_item = self.stock_list.currentItem()
+        if current_item:
+            self.import_stock_item(current_item)
+
+    def import_stock_item(self, list_item: QListWidgetItem):
+        stock_item = list_item.data(Qt.ItemDataRole.UserRole)
+        if not isinstance(stock_item, dict):
+            return
+        self.download_stock_item(stock_item)
+
+    def download_stock_item(self, stock_item: dict):
+        if self.stock_download_thread and self.stock_download_thread.isRunning():
+            return
+
+        destination_path = self._build_stock_destination(stock_item)
+        if os.path.exists(destination_path) and os.path.getsize(destination_path) > 0:
+            self.import_media([destination_path])
+            return
+
+        self._set_stock_controls_enabled(False)
+        self.stock_download_thread = StockDownloadThread(stock_item, destination_path)
+        self.stock_download_thread.finished.connect(self.on_stock_download_finished)
+        self.stock_download_thread.start()
+
+    def on_stock_download_finished(self, success: bool, file_path: str, stock_item: dict):
+        self._set_stock_controls_enabled(True)
+        if success and file_path:
+            self.import_media([file_path])
+
+    def _set_stock_controls_enabled(self, enabled: bool):
+        self.stock_search_input.setEnabled(enabled)
+        self.stock_search_btn.setEnabled(enabled)
+        self.stock_list.setEnabled(enabled)
+        self.import_stock_btn.setEnabled(enabled)
+
+    def _build_stock_destination(self, stock_item: dict) -> str:
+        base_dir = os.path.join(os.path.expanduser("~"), ".video_downloader", "stock")
+        os.makedirs(base_dir, exist_ok=True)
+
+        media_id = self._sanitize_name(str(stock_item.get("id", "stock")))
+        title = str(stock_item.get("title", media_id))
+        safe_title = self._sanitize_name(title)
+        extension = self._guess_media_extension(str(stock_item.get("url", "")))
+        filename = f"{media_id}_{safe_title}{extension}"
+        return os.path.join(base_dir, filename)
+
+    def _sanitize_name(self, name: str) -> str:
+        normalized = re.sub(r"[^a-zA-Z0-9._-]+", "_", name).strip("_")
+        return normalized[:80] or "stock_media"
+
+    def _guess_media_extension(self, url: str) -> str:
+        parsed = urlparse(url)
+        extension = os.path.splitext(parsed.path)[1].lower()
+        supported = {".mp4", ".mov", ".mkv", ".avi", ".webm", ".mp3", ".wav", ".m4a"}
+        if extension in supported:
+            return extension
+        return ".mp4"

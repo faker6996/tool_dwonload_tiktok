@@ -96,6 +96,33 @@ class IngestionThread(QThread):
         self.finished.emit()
 
 
+class StockDownloadThread(QThread):
+    """Download stock media in background to avoid blocking UI."""
+
+    finished = pyqtSignal(bool, str, dict)  # success, file_path, stock_item
+
+    def __init__(self, stock_item: dict, destination_path: str):
+        super().__init__()
+        self.stock_item = stock_item
+        self.destination_path = destination_path
+
+    def run(self):
+        try:
+            from src.core.api.stock_api import stock_api
+
+            media_id = str(self.stock_item.get("id", "stock_item"))
+            url = str(self.stock_item.get("url", "")).strip()
+            if not url:
+                self.finished.emit(False, "", self.stock_item)
+                return
+
+            saved_path = stock_api.download_media(media_id, url, self.destination_path)
+            success = bool(saved_path and os.path.exists(saved_path))
+            self.finished.emit(success, saved_path or "", self.stock_item)
+        except Exception:
+            self.finished.emit(False, "", self.stock_item)
+
+
 class ChannelScraperThread(QThread):
     """Thread for scraping channel videos in background."""
     
@@ -136,4 +163,3 @@ class ChannelScraperThread(QThread):
                 
         except Exception as e:
             self.error.emit(str(e))
-

@@ -2,6 +2,7 @@ import subprocess
 import json
 import os
 import hashlib
+import shutil
 from typing import Dict, Optional
 from .logging_utils import get_logger
 
@@ -147,21 +148,68 @@ class MediaIngestion:
         """
         Generate a low-res proxy for the video.
         """
-        cache_dir = os.path.join(os.path.expanduser("~"), ".video_downloader_cache", "proxies")
+        cache_dir = os.path.join(self.cache_dir, "proxies")
         os.makedirs(cache_dir, exist_ok=True)
-        
-        file_hash = hashlib.md5(file_path.encode()).hexdigest()
+
+        try:
+            stat = os.stat(file_path)
+            cache_key = f"{file_path}:{stat.st_mtime}:{stat.st_size}"
+        except OSError:
+            cache_key = file_path
+
+        file_hash = hashlib.md5(cache_key.encode()).hexdigest()
         output_path = os.path.join(cache_dir, f"{file_hash}_proxy.mp4")
-        
-        if os.path.exists(output_path):
+
+        if os.path.exists(output_path) and os.path.getsize(output_path) > 0:
             return output_path
-            
-        # Simulate Proxy Generation (FFmpeg downscale)
-        # cmd = f'ffmpeg -i "{file_path}" -vf scale=640:-1 -c:v libx264 -crf 28 -preset ultrafast "{output_path}"'
-        # subprocess.run(cmd, shell=True)
-        
-        # For MVP, just create a dummy small file
-        with open(output_path, 'w') as f:
-            f.write("Proxy Data")
-            
+
+        temp_output = f"{output_path}.tmp"
+        cmd = [
+            "ffmpeg",
+            "-y",
+            "-i",
+            file_path,
+            "-map",
+            "0:v:0",
+            "-map",
+            "0:a:0?",
+            "-vf",
+            "scale='min(640,iw)':-2",
+            "-c:v",
+            "libx264",
+            "-preset",
+            "veryfast",
+            "-crf",
+            "30",
+            "-c:a",
+            "aac",
+            "-b:a",
+            "96k",
+            "-movflags",
+            "+faststart",
+            temp_output,
+        ]
+
+        try:
+            subprocess.run(cmd, capture_output=True, text=True, check=True)
+            os.replace(temp_output, output_path)
+            logger.info("Generated proxy video: %s", output_path)
+            return output_path
+        except (subprocess.CalledProcessError, FileNotFoundError) as e:
+            logger.warning("FFmpeg proxy generation failed for %s: %s", file_path, e)
+            if os.path.exists(temp_output):
+                try:
+                    os.remove(temp_output)
+                except OSError:
+                    pass
+
+        try:
+            shutil.copy2(file_path, output_path)
+            logger.warning("Using copied source as proxy fallback: %s", output_path)
+        except OSError as e:
+            logger.warning("Proxy fallback copy failed for %s: %s", file_path, e)
+            # Keep old behavior as final fallback to avoid hard failure.
+            with open(output_path, "w") as f:
+                f.write("Proxy Data")
+
         return output_path

@@ -63,5 +63,53 @@ class TestTimeline(unittest.TestCase):
         history_manager.redo()
         self.assertEqual(len(self.track.clips), 1)
 
+    def test_split_clip(self):
+        clip = Clip("c1", "Clip 1", duration=10.0)
+        self.track.add_clip(clip)
+
+        right = self.track.split_clip(clip.id, 4.0)
+        self.assertIsNotNone(right)
+        self.assertEqual(len(self.track.clips), 2)
+
+        left = self.track.clips[0]
+        self.assertEqual(left.start_time, 0.0)
+        self.assertEqual(left.in_point, 0.0)
+        self.assertAlmostEqual(left.out_point, 4.0)
+
+        self.assertEqual(right.start_time, 4.0)
+        self.assertAlmostEqual(right.in_point, 4.0)
+        self.assertAlmostEqual(right.out_point, 10.0)
+
+    def test_trim_clip_ripple_shrink(self):
+        clip1 = Clip("c1", "Clip 1", duration=5.0)
+        clip2 = Clip("c2", "Clip 2", duration=3.0)
+        self.track.add_clip(clip1)
+        self.track.add_clip(clip2)
+
+        ok = self.track.trim_clip(clip1.id, new_out_point=3.0)
+        self.assertTrue(ok)
+        self.assertAlmostEqual(self.track.clips[0].length, 3.0)
+        self.assertAlmostEqual(self.track.clips[1].start_time, 3.0)
+
+    def test_trim_clip_ripple_expand(self):
+        clip1 = Clip("c1", "Clip 1", duration=5.0, in_point=1.0)
+        clip2 = Clip("c2", "Clip 2", duration=3.0)
+        self.track.add_clip(clip1)
+        self.track.add_clip(clip2)
+        self.assertAlmostEqual(self.track.clips[1].start_time, 4.0)
+
+        ok = self.track.trim_clip(clip1.id, new_in_point=0.0)
+        self.assertTrue(ok)
+        self.assertAlmostEqual(self.track.clips[0].length, 5.0)
+        self.assertAlmostEqual(self.track.clips[1].start_time, 5.0)
+
+    def test_split_or_trim_invalid_range(self):
+        clip = Clip("c1", "Clip 1", duration=5.0)
+        self.track.add_clip(clip)
+
+        self.assertIsNone(self.track.split_clip(clip.id, 0.0))
+        self.assertIsNone(self.track.split_clip(clip.id, 5.0))
+        self.assertFalse(self.track.trim_clip(clip.id, new_in_point=4.0, new_out_point=2.0))
+
 if __name__ == '__main__':
     unittest.main()

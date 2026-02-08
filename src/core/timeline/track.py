@@ -1,4 +1,6 @@
+from copy import deepcopy
 from typing import List, Optional
+import uuid
 from .clip import Clip
 
 class Track:
@@ -49,6 +51,18 @@ class Track:
             if clip.id == clip_id:
                 return self.clips.pop(i)
         return None
+
+    def get_clip_index(self, clip_id: str) -> int:
+        for index, clip in enumerate(self.clips):
+            if clip.id == clip_id:
+                return index
+        return -1
+
+    def get_clip(self, clip_id: str) -> Optional[Clip]:
+        index = self.get_clip_index(clip_id)
+        if index < 0:
+            return None
+        return self.clips[index]
 
 class MagneticTrack(Track):
     """
@@ -119,6 +133,79 @@ class MagneticTrack(Track):
                 self.clips[i].start_time -= shift_amount
                 
         return removed_clip
+
+    def split_clip(self, clip_id: str, timeline_time: float) -> Optional[Clip]:
+        """
+        Split a clip at absolute timeline time and insert right-side clip.
+        Returns the new right-side clip, or None if invalid.
+        """
+        if self.is_locked:
+            return None
+
+        clip_index = self.get_clip_index(clip_id)
+        if clip_index < 0:
+            return None
+
+        clip = self.clips[clip_index]
+        clip_start = clip.start_time
+        clip_end = clip.start_time + clip.length
+
+        if timeline_time <= clip_start or timeline_time >= clip_end:
+            return None
+
+        media_split_point = clip.in_point + (timeline_time - clip_start)
+        if media_split_point <= clip.in_point or media_split_point >= clip.out_point:
+            return None
+
+        right_clip = deepcopy(clip)
+        right_clip.id = str(uuid.uuid4())
+        right_clip.start_time = timeline_time
+        right_clip.in_point = media_split_point
+
+        clip.out_point = media_split_point
+        self.clips.insert(clip_index + 1, right_clip)
+        return right_clip
+
+    def trim_clip(
+        self,
+        clip_id: str,
+        new_in_point: Optional[float] = None,
+        new_out_point: Optional[float] = None,
+    ) -> bool:
+        """
+        Trim clip in/out and ripple shift subsequent clips by length delta.
+        Returns True on success.
+        """
+        if self.is_locked:
+            return False
+
+        clip_index = self.get_clip_index(clip_id)
+        if clip_index < 0:
+            return False
+
+        clip = self.clips[clip_index]
+        current_in = clip.in_point
+        current_out = clip.out_point
+
+        target_in = current_in if new_in_point is None else float(new_in_point)
+        target_out = current_out if new_out_point is None else float(new_out_point)
+
+        target_in = max(0.0, min(target_in, clip.duration))
+        target_out = max(0.0, min(target_out, clip.duration))
+
+        if target_out <= target_in:
+            return False
+
+        old_length = clip.length
+        clip.in_point = target_in
+        clip.out_point = target_out
+        length_delta = clip.length - old_length
+
+        if abs(length_delta) > 1e-9:
+            for i in range(clip_index + 1, len(self.clips)):
+                self.clips[i].start_time += length_delta
+
+        return True
 
 
 class StickerTrack(Track):
