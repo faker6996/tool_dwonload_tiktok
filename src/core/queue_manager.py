@@ -8,6 +8,9 @@ from dataclasses import dataclass, field
 from typing import Optional, List, Dict, Callable, Any
 from enum import Enum
 from PyQt6.QtCore import QObject, QThread, pyqtSignal, QMutex, QWaitCondition
+from .logging_utils import get_logger
+
+logger = get_logger(__name__)
 
 
 class TaskType(Enum):
@@ -112,9 +115,15 @@ class QueueWorker(QThread):
         
         handler = self._handlers.get(task.task_type)
         if handler is None:
-            task.status = TaskStatus.FAILED
-            task.error = f"No handler for task type: {task.task_type.value}"
-            self.task_failed.emit(task.id, task.error)
+            handler = self.queue_manager.get_handler(task.task_type)
+            if handler is not None:
+                self._handlers[task.task_type] = handler
+
+        if handler is None:
+            # Handler may be registered shortly after task enqueue.
+            # Put task back to pending instead of failing immediately.
+            task.status = TaskStatus.PENDING
+            time.sleep(0.1)
             return
         
         try:
@@ -151,29 +160,45 @@ class QueueManager(QObject):
         self._mutex = QMutex()
         self._max_workers = max_workers
         self._workers: List[QueueWorker] = []
+        self._handlers: Dict[TaskType, Callable] = {}
         self._is_paused = False
-        
-        # Start workers
-        self._start_workers()
+        self._workers_started = False
     
     def _start_workers(self):
         """Start worker threads."""
+        if self._workers_started:
+            return
         for i in range(self._max_workers):
             worker = QueueWorker(self)
+            for task_type, handler in self._handlers.items():
+                worker.register_handler(task_type, handler)
             worker.task_started.connect(self._on_task_started)
             worker.task_progress.connect(self._on_task_progress)
             worker.task_completed.connect(self._on_task_completed)
             worker.task_failed.connect(self._on_task_failed)
+            if self._is_paused:
+                worker.pause()
             self._workers.append(worker)
             worker.start()
+        self._workers_started = True
+
+    def _ensure_workers_started(self):
+        if not self._workers_started:
+            self._start_workers()
     
     def register_handler(self, task_type: TaskType, handler: Callable):
         """Register a handler for all workers."""
+        self._handlers[task_type] = handler
+        self._ensure_workers_started()
         for worker in self._workers:
             worker.register_handler(task_type, handler)
+
+    def get_handler(self, task_type: TaskType) -> Optional[Callable]:
+        return self._handlers.get(task_type)
     
     def add_task(self, task_type: TaskType, title: str, data: dict) -> QueueTask:
         """Add a new task to the queue."""
+        self._ensure_workers_started()
         task = QueueTask(
             task_type=task_type,
             title=title,
@@ -185,7 +210,7 @@ class QueueManager(QObject):
         self._mutex.unlock()
         
         self.task_added.emit(task)
-        print(f"📋 Task added: [{task.task_type.value}] {task.title}")
+        logger.info("Task added: [%s] %s", task.task_type.value, task.title)
         return task
     
     def get_next_pending_task(self) -> Optional[QueueTask]:
@@ -235,12 +260,14 @@ class QueueManager(QObject):
     
     def pause_queue(self):
         """Pause all workers."""
+        self._ensure_workers_started()
         self._is_paused = True
         for worker in self._workers:
             worker.pause()
     
     def resume_queue(self):
         """Resume all workers."""
+        self._ensure_workers_started()
         self._is_paused = False
         for worker in self._workers:
             worker.resume()
@@ -285,10 +312,15 @@ class QueueManager(QObject):
     
     def shutdown(self):
         """Shutdown all workers gracefully."""
+        if not self._workers:
+            self._workers_started = False
+            return
         for worker in self._workers:
             worker.stop()
         for worker in self._workers:
             worker.wait()
+        self._workers.clear()
+        self._workers_started = False
 
 
 # Global queue manager instance

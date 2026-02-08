@@ -37,6 +37,20 @@ class NoWheelSlider(QSlider):
     def wheelEvent(self, event):
         event.ignore()
 
+
+class ScaleValueProxy:
+    """Compatibility adapter exposing normalized scale value as 1.0-based float."""
+
+    def __init__(self, slider: QSlider):
+        self._slider = slider
+
+    def value(self) -> float:
+        return self._slider.value() / 100.0
+
+    def setValue(self, value: float) -> None:
+        self._slider.setValue(int(value * 100))
+
+
 class Inspector(QFrame):
     clip_changed = pyqtSignal(object)
     aspect_ratio_changed = pyqtSignal(str)
@@ -65,6 +79,7 @@ class Inspector(QFrame):
         scroll.setStyleSheet("background: transparent;")
         
         content_widget = QWidget()
+        self.content_widget = content_widget
         self.content_layout = QVBoxLayout(content_widget)
         self.content_layout.setContentsMargins(16, 16, 16, 16)
         self.content_layout.setSpacing(24)
@@ -101,6 +116,7 @@ class Inspector(QFrame):
 
         # Scale (only numeric + Reset, no visible slider)
         scale_container, self.scale_slider, self.scale_spin = self.create_slider_input("Scale", 1, 500, 100, "%")
+        self.scale_x = ScaleValueProxy(self.scale_slider)
         self.content_layout.addWidget(scale_container)
 
         # Hide the slider and replace its row with a Reset button.
@@ -228,7 +244,10 @@ class Inspector(QFrame):
 
     def set_clip(self, clip):
         self.current_clip = clip
-        self.setEnabled(clip is not None)
+        enabled = clip is not None
+        self.setEnabled(enabled)
+        if hasattr(self, "content_widget"):
+            self.content_widget.setEnabled(enabled)
         
         if not clip:
             return

@@ -6,6 +6,9 @@ import cv2
 import numpy as np
 from typing import Tuple, Optional
 import os
+from ..logging_utils import get_logger
+
+logger = get_logger(__name__)
 
 
 class SubtitleRemoverService:
@@ -33,7 +36,7 @@ class SubtitleRemoverService:
                     ['ffmpeg', '-encoders'], capture_output=True, text=True, timeout=5
                 )
                 if 'h264_nvenc' in ffmpeg_check.stdout:
-                    print("🎮 NVIDIA GPU detected - using NVENC acceleration")
+                    logger.info("NVIDIA GPU detected, using NVENC acceleration")
                     self._gpu_encoder = {
                         "encoder": "h264_nvenc",
                         "preset": ["-preset", "p4"],
@@ -50,7 +53,7 @@ class SubtitleRemoverService:
                 ['ffmpeg', '-encoders'], capture_output=True, text=True, timeout=5
             )
             if 'h264_amf' in ffmpeg_check.stdout:
-                print("🎮 AMD GPU detected - using AMF acceleration")
+                logger.info("AMD GPU detected, using AMF acceleration")
                 self._gpu_encoder = {
                     "encoder": "h264_amf",
                     "preset": ["-quality", "speed"],
@@ -66,7 +69,7 @@ class SubtitleRemoverService:
                 ['ffmpeg', '-encoders'], capture_output=True, text=True, timeout=5
             )
             if 'h264_qsv' in ffmpeg_check.stdout:
-                print("🎮 Intel GPU detected - using QuickSync acceleration")
+                logger.info("Intel GPU detected, using QuickSync acceleration")
                 self._gpu_encoder = {
                     "encoder": "h264_qsv",
                     "preset": ["-preset", "fast"],
@@ -84,7 +87,7 @@ class SubtitleRemoverService:
                     ['ffmpeg', '-encoders'], capture_output=True, text=True, timeout=5
                 )
                 if 'h264_videotoolbox' in ffmpeg_check.stdout:
-                    print("🍎 Apple Silicon detected - using VideoToolbox acceleration")
+                    logger.info("Apple platform detected, using VideoToolbox acceleration")
                     self._gpu_encoder = {
                         "encoder": "h264_videotoolbox",
                         "preset": [],  # VideoToolbox has different options
@@ -95,7 +98,7 @@ class SubtitleRemoverService:
             pass
         
         # Fallback to CPU
-        print("💻 No GPU acceleration found - using CPU encoding")
+        logger.info("No GPU acceleration found, using CPU encoding")
         self._gpu_encoder = {
             "encoder": "libx264",
             "preset": ["-preset", "fast"],
@@ -112,12 +115,12 @@ class SubtitleRemoverService:
         try:
             import easyocr
         except ImportError:
-            print("⚠️ EasyOCR not installed, falling back to OpenCV")
+            logger.warning("EasyOCR not installed, falling back to OpenCV-based detection")
             return self.detect_subtitle_region_opencv(video_path, num_samples)
         
         cap = cv2.VideoCapture(video_path)
         if not cap.isOpened():
-            print(f"❌ Cannot open video: {video_path}")
+            logger.error("Cannot open video: %s", video_path)
             return None
         
         total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
@@ -126,7 +129,7 @@ class SubtitleRemoverService:
         
         # Try Traditional Chinese first (common for TikTok/Douyin from Taiwan/HK)
         # If no results, try Simplified Chinese (Mainland China)
-        print("🔍 Loading EasyOCR model (first time may take a while)...")
+        logger.info("Loading EasyOCR model (first run may take a while)")
         
         all_text_boxes = []
         
@@ -137,7 +140,11 @@ class SubtitleRemoverService:
                 # Sample frames
                 sample_positions = [int(total_frames * (0.2 + 0.6 * i / (num_samples - 1))) for i in range(num_samples)]
                 
-                print(f"🔍 Detecting subtitles with EasyOCR ({lang_set[0]}) in {num_samples} frames...")
+                logger.info(
+                    "Detecting subtitles with EasyOCR (%s) across %d frames",
+                    lang_set[0],
+                    num_samples,
+                )
                 
                 for i, frame_pos in enumerate(sample_positions):
                     cap.set(cv2.CAP_PROP_POS_FRAMES, frame_pos)
@@ -161,22 +168,27 @@ class SubtitleRemoverService:
                             
                             # Convert back to full frame coordinates
                             all_text_boxes.append((x1, y1 + search_y, w, h))
-                            print(f"    📝 Detected: '{text[:30]}...' (conf: {prob:.2f})")
+                            logger.debug("Detected text '%s...' (conf: %.2f)", text[:30], prob)
                     
-                    print(f"  Frame {i+1}/{num_samples}: Found {len(results)} text regions")
+                    logger.debug(
+                        "Frame %d/%d: found %d text regions",
+                        i + 1,
+                        num_samples,
+                        len(results),
+                    )
                 
                 # If found results, break out of loop
                 if all_text_boxes:
-                    print(f"✅ Found {len(all_text_boxes)} text regions using {lang_set[0]}")
+                    logger.info("Found %d text regions using %s", len(all_text_boxes), lang_set[0])
                     break
             except Exception as e:
-                print(f"⚠️ Error with {lang_set}: {e}")
+                logger.warning("EasyOCR detection failed for language set %s: %s", lang_set, e)
                 continue
         
         cap.release()
         
         if not all_text_boxes:
-            print("⚠️ No subtitle regions detected by EasyOCR")
+            logger.warning("No subtitle regions detected by EasyOCR")
             return None
         
         # Combine all detected boxes into one bounding box
@@ -194,7 +206,13 @@ class SubtitleRemoverService:
         final_w = min(width - final_x, max_x - min_x + padding_x * 2)
         final_h = min(height - final_y, max_y - min_y + padding_y * 2)
         
-        print(f"✅ EasyOCR detected subtitle region: x={final_x}, y={final_y}, w={final_w}, h={final_h}")
+        logger.info(
+            "EasyOCR subtitle region detected: x=%d y=%d w=%d h=%d",
+            final_x,
+            final_y,
+            final_w,
+            final_h,
+        )
         return (final_x, final_y, final_w, final_h)
     
     def detect_subtitle_region_opencv(self, video_path: str, num_samples: int = 5) -> Optional[Tuple[int, int, int, int]]:
@@ -205,7 +223,7 @@ class SubtitleRemoverService:
         """
         cap = cv2.VideoCapture(video_path)
         if not cap.isOpened():
-            print(f"❌ Cannot open video: {video_path}")
+            logger.error("Cannot open video: %s", video_path)
             return None
         
         total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
@@ -217,7 +235,7 @@ class SubtitleRemoverService:
         
         all_text_boxes = []
         
-        print(f"🔍 Detecting subtitles in {num_samples} frames...")
+        logger.info("Detecting subtitles in %d sampled frames", num_samples)
         
         for i, frame_pos in enumerate(sample_positions):
             cap.set(cv2.CAP_PROP_POS_FRAMES, frame_pos)
@@ -245,12 +263,17 @@ class SubtitleRemoverService:
                     # Convert back to full frame coordinates
                     all_text_boxes.append((x, y + search_y, w, h))
             
-            print(f"  Frame {i+1}/{num_samples}: Found {len(contours)} potential text regions")
+            logger.debug(
+                "Frame %d/%d: found %d potential text regions",
+                i + 1,
+                num_samples,
+                len(contours),
+            )
         
         cap.release()
         
         if not all_text_boxes:
-            print("⚠️ No subtitle regions detected, using default position")
+            logger.warning("No subtitle regions detected, using default position")
             return None
         
         # Combine all detected boxes into one bounding box
@@ -287,7 +310,13 @@ class SubtitleRemoverService:
         final_w = min(width - final_x, sub_width + padding_x * 2)
         final_h = min(height - final_y, sub_height + padding_y_top + padding_y_bottom)
         
-        print(f"✅ Detected subtitle region: x={final_x}, y={final_y}, w={final_w}, h={final_h}")
+        logger.info(
+            "OpenCV subtitle region detected: x=%d y=%d w=%d h=%d",
+            final_x,
+            final_y,
+            final_w,
+            final_h,
+        )
         return (final_x, final_y, final_w, final_h)
     
     def remove_subtitles_ffmpeg(self, input_path: str, output_path: str,
@@ -321,27 +350,39 @@ class SubtitleRemoverService:
         try:
             result = subprocess.run(probe_cmd, capture_output=True, text=True)
             width, height = map(int, result.stdout.strip().split('x'))
-            print(f"📐 Video: {width}x{height}")
+            logger.info("Video resolution: %dx%d", width, height)
         except:
             width, height = 1920, 1080  # Default
         
         # Try to detect subtitle region using EasyOCR (only for blur/black, not crop)
         detected_region = None
         if method in ["blur", "black"]:
-            print("🔍 Detecting subtitle position with EasyOCR...")
+            logger.info("Detecting subtitle position with EasyOCR")
             detected_region = self.detect_subtitle_region_easyocr(input_path, num_samples=10)
         
         if detected_region:
             # Use detected region
             sub_x, sub_y, sub_width, sub_height = detected_region
-            print(f"✅ Using detected region: {sub_x},{sub_y} -> {sub_width}x{sub_height}")
+            logger.info(
+                "Using detected subtitle region: %d,%d -> %dx%d",
+                sub_x,
+                sub_y,
+                sub_width,
+                sub_height,
+            )
         else:
             # Fallback to default centered area (middle 70% width, bottom 12%)
             sub_height = int(height * min(bottom_percent, 0.12))
             sub_y = int(height * (1 - min(bottom_percent, 0.15)))
             sub_width = int(width * 0.7)
             sub_x = int(width * 0.15)
-            print(f"⚠️ Using default region: {sub_x},{sub_y} -> {sub_width}x{sub_height}")
+            logger.warning(
+                "Using default subtitle region: %d,%d -> %dx%d",
+                sub_x,
+                sub_y,
+                sub_width,
+                sub_height,
+            )
         
         if method == "crop":
             # Crop video to remove bottom portion
@@ -369,8 +410,8 @@ class SubtitleRemoverService:
         cmd.extend(gpu_settings["extra"])
         cmd.extend(["-c:a", "copy", output_path])
         
-        print(f"🚀 Running FFmpeg ({method} mode) with {encoder}...")
-        print(f"   Filter: {filter_complex}")
+        logger.info("Running FFmpeg subtitle removal (%s mode) with encoder %s", method, encoder)
+        logger.debug("FFmpeg video filter: %s", filter_complex)
         
         try:
             process = subprocess.Popen(
@@ -384,14 +425,14 @@ class SubtitleRemoverService:
             stdout, stderr = process.communicate()
             
             if process.returncode == 0:
-                print(f"✅ Video saved to: {output_path}")
+                logger.info("Subtitle-removed video saved: %s", output_path)
                 return True
             else:
-                print(f"❌ FFmpeg error: {stderr[-500:]}")
+                logger.error("FFmpeg subtitle removal error: %s", stderr[-500:])
                 return False
                 
         except Exception as e:
-            print(f"❌ Error: {e}")
+            logger.error("Failed to run FFmpeg subtitle removal: %s", e)
             return False
     
     def set_subtitle_region(self, x: int, y: int, w: int, h: int):
@@ -468,7 +509,7 @@ class SubtitleRemoverService:
         # Open video
         cap = cv2.VideoCapture(input_path)
         if not cap.isOpened():
-            print(f"Error: Cannot open video {input_path}")
+            logger.error("Cannot open video: %s", input_path)
             return False
         
         # Get video properties
@@ -481,18 +522,18 @@ class SubtitleRemoverService:
         fourcc = cv2.VideoWriter_fourcc(*'mp4v')
         out = cv2.VideoWriter(output_path, fourcc, fps, (width, height))
         
-        print(f"🎬 Processing video: {total_frames} frames @ {fps}fps")
-        print(f"📐 Resolution: {width}x{height}")
+        logger.info("Processing video: %d frames @ %dfps", total_frames, fps)
+        logger.info("Video resolution: %dx%d", width, height)
         
         # Auto-detect region from first frame if not specified
         ret, first_frame = cap.read()
         if not ret:
-            print("Error: Cannot read first frame")
+            logger.error("Cannot read first frame from video: %s", input_path)
             return False
         
         if region is None:
             region = self.auto_detect_region(first_frame)
-            print(f"📍 Auto-detected subtitle region: {region}")
+            logger.info("Auto-detected subtitle region: %s", region)
         
         # Reset to beginning
         cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
@@ -520,12 +561,12 @@ class SubtitleRemoverService:
             # Print progress every 5%
             if frame_count % (total_frames // 20 + 1) == 0:
                 percent = (frame_count / total_frames) * 100
-                print(f"  ⏳ Progress: {percent:.1f}% ({frame_count}/{total_frames})")
+                logger.debug("Processing progress: %.1f%% (%d/%d)", percent, frame_count, total_frames)
         
         cap.release()
         out.release()
         
-        print(f"✅ Video saved to: {output_path}")
+        logger.info("Subtitle-removed video saved: %s", output_path)
         return True
     
     def remove_subtitles_simple(self, input_path: str, output_path: str,

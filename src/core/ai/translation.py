@@ -5,6 +5,9 @@ Supports: Google Translate (free), Gemini Pro (API key required)
 import os
 from typing import Optional
 from abc import ABC, abstractmethod
+from ..logging_utils import get_logger
+
+logger = get_logger(__name__)
 
 
 class RateLimitError(Exception):
@@ -76,7 +79,7 @@ class GoogleTranslateProvider(TranslationProvider):
             return result or text
             
         except Exception as e:
-            print(f"⚠️ Google Translate error: {e}")
+            logger.warning("Google Translate error: %s", e)
             return text
     
     def translate_batch(self, texts: list, target_lang: str, source_lang: str = "auto") -> list:
@@ -113,7 +116,7 @@ class GeminiProProvider(TranslationProvider):
             return text
         
         if not self.api_key:
-            print("⚠️ Gemini API key not set. Using Google Translate fallback.")
+            logger.warning("Gemini API key not set. Using Google Translate fallback.")
             return GoogleTranslateProvider().translate(text, target_lang, source_lang)
         
         try:
@@ -140,7 +143,7 @@ class GeminiProProvider(TranslationProvider):
             # Check for rate limit (429) error
             if "429" in error_str or "quota" in error_str.lower() or "rate" in error_str.lower():
                 raise RateLimitError("Gemini Pro", error_str)
-            print(f"⚠️ Gemini Pro error: {e}")
+            logger.warning("Gemini Pro error: %s", e)
             return GoogleTranslateProvider().translate(text, target_lang, source_lang)
     
     def translate_batch(self, texts: list, target_lang: str, source_lang: str = "auto") -> list:
@@ -149,7 +152,7 @@ class GeminiProProvider(TranslationProvider):
             return []
         
         if not self.api_key:
-            print("⚠️ Gemini API key not set. Using Google Translate fallback.")
+            logger.warning("Gemini API key not set. Using Google Translate fallback.")
             return [GoogleTranslateProvider().translate(t, target_lang, source_lang) for t in texts]
         
         try:
@@ -208,7 +211,7 @@ class GeminiProProvider(TranslationProvider):
                 raise RateLimitError("Gemini Pro", error_str)
             # DON'T fallback to individual translations - that causes 20x more requests!
             # Just return original texts and log error
-            print(f"⚠️ Gemini batch error: {e}. Keeping original texts.")
+            logger.warning("Gemini batch error: %s. Keeping original texts.", e)
             return texts  # Return originals instead of calling individual translations
 
 
@@ -244,7 +247,7 @@ class OpenAIProvider(TranslationProvider):
             return text
         
         if not self.api_key:
-            print("⚠️ OpenAI API key not set. Using Google Translate fallback.")
+            logger.warning("OpenAI API key not set. Using Google Translate fallback.")
             return GoogleTranslateProvider().translate(text, target_lang, source_lang)
         
         try:
@@ -274,7 +277,7 @@ class OpenAIProvider(TranslationProvider):
             error_str = str(e)
             if "429" in error_str or "rate" in error_str.lower():
                 raise RateLimitError(self.get_name(), error_str)
-            print(f"⚠️ OpenAI error: {e}")
+            logger.warning("OpenAI error: %s", e)
             return GoogleTranslateProvider().translate(text, target_lang, source_lang)
     
     def translate_batch(self, texts: list, target_lang: str, source_lang: str = "auto") -> list:
@@ -320,7 +323,7 @@ class OpenAIProvider(TranslationProvider):
                 chinese_ratio = detect_chinese_ratio(normalized_texts)
                 if chinese_ratio > 0.3:
                     detected_source = "zh"
-                    print(f"🔍 Auto-detected Chinese source ({chinese_ratio*100:.0f}% Chinese chars)")
+                    logger.info("Auto-detected Chinese source (%.0f%% Chinese chars)", chinese_ratio * 100)
             
             lang_names = {
                 "vi": "Vietnamese", "en": "English",
@@ -381,12 +384,12 @@ class OpenAIProvider(TranslationProvider):
             
             # Check response status
             if response.status != "completed":
-                print(f"⚠️ OpenAI response status: {response.status}")
+                logger.warning("OpenAI response status: %s", response.status)
                 return texts
             
             output = response.output_text
             if not output:
-                print("⚠️ OpenAI returned EMPTY output_text")
+                logger.warning("OpenAI returned empty output_text")
                 return texts
             
             # Parse JSON response - schema guarantees {translations: [...]}
@@ -395,20 +398,20 @@ class OpenAIProvider(TranslationProvider):
                 results = obj.get("translations", [])
                 
                 if not isinstance(results, list):
-                    print(f"⚠️ translations is not array: {type(results)}")
+                    logger.warning("translations is not array: %s", type(results))
                     return texts
                 
                 # Pad with originals if needed
                 if len(results) < n:
-                    print(f"⚠️ Got {len(results)} results, expected {n}. Padding.")
+                    logger.warning("Got %s results, expected %s. Padding.", len(results), n)
                     while len(results) < n:
                         results.append(texts[len(results)])
                 
                 return results[:n]
                 
             except json.JSONDecodeError as e:
-                print(f"⚠️ Failed to parse JSON: {e}")
-                print(f"   Output was: {output[:200]}...")
+                logger.warning("Failed to parse JSON: %s", e)
+                logger.debug("OpenAI raw output: %s...", output[:200])
                 return texts
             
         except RateLimitError:
@@ -417,7 +420,7 @@ class OpenAIProvider(TranslationProvider):
             error_str = str(e)
             if "429" in error_str or "rate" in error_str.lower():
                 raise RateLimitError(self.get_name(), error_str)
-            print(f"⚠️ OpenAI batch error: {e}")
+            logger.warning("OpenAI batch error: %s", e)
             return texts
 
 
@@ -444,7 +447,7 @@ class TranslationService:
         """Set active translation provider."""
         if provider in self.providers:
             self.current_provider = provider
-            print(f"🌐 Translation provider set to: {self.get_provider_name()}")
+            logger.info("Translation provider set to: %s", self.get_provider_name())
     
     def get_provider_name(self) -> str:
         """Get current provider name."""

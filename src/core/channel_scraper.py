@@ -8,6 +8,9 @@ import re
 from typing import List, Dict, Optional, Callable
 from datetime import datetime, timedelta
 from playwright.async_api import async_playwright, Browser, Page
+from .logging_utils import get_logger
+
+logger = get_logger(__name__)
 
 
 class ChannelScraper:
@@ -154,7 +157,7 @@ class ChannelScraper:
                             progress_callback(f"Found {len(videos)} videos...", len(videos))
                         
                     except Exception as e:
-                        print(f"Error parsing video item: {e}")
+                        logger.warning("Error parsing video item: %s", e)
                         continue
                 
                 # Check if we got new videos
@@ -173,7 +176,7 @@ class ChannelScraper:
                 progress_callback(f"Done! Found {len(videos)} videos", len(videos))
             
         except Exception as e:
-            print(f"Error scraping channel: {e}")
+            logger.warning("Error scraping channel: %s", e)
             if progress_callback:
                 progress_callback(f"Error: {str(e)}", len(videos))
         finally:

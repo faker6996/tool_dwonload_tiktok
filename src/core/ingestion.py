@@ -3,6 +3,9 @@ import json
 import os
 import hashlib
 from typing import Dict, Optional
+from .logging_utils import get_logger
+
+logger = get_logger(__name__)
 
 class MediaIngestion:
     def __init__(self):
@@ -27,10 +30,10 @@ class MediaIngestion:
             data = json.loads(result.stdout)
             return self._parse_metadata(data, file_path)
         except subprocess.CalledProcessError as e:
-            print(f"Error probing file {file_path}: {e}")
+            logger.warning("Error probing file %s: %s", file_path, e)
             return None
         except json.JSONDecodeError as e:
-            print(f"Error parsing ffprobe output for {file_path}: {e}")
+            logger.warning("Error parsing ffprobe output for %s: %s", file_path, e)
             return None
 
     def _parse_metadata(self, data: Dict, file_path: str) -> Dict:
@@ -109,7 +112,7 @@ class MediaIngestion:
             subprocess.run(cmd, capture_output=True, check=True)
             return thumbnail_path
         except subprocess.CalledProcessError as e:
-            print(f"Error generating thumbnail for {file_path}: {e}")
+            logger.warning("Error generating thumbnail for %s: %s", file_path, e)
             return ""
 
     def generate_waveform(self, file_path: str) -> str:
@@ -137,7 +140,7 @@ class MediaIngestion:
             subprocess.run(cmd, capture_output=True, check=True)
             return waveform_path
         except subprocess.CalledProcessError as e:
-            print(f"Error generating waveform for {file_path}: {e}")
+            logger.warning("Error generating waveform for %s: %s", file_path, e)
             return ""
 
     def generate_proxy(self, file_path: str) -> str:

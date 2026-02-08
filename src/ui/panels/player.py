@@ -629,12 +629,7 @@ class Player(QFrame):
         from src.core.timeline.clip import Clip
         from src.core.state import state_manager
         
-        asset = None
-        if hasattr(state_manager, "state") and "media_pool" in state_manager.state:
-             for a in state_manager.state["media_pool"]["assets"].values():
-                if a["target_url"] == file_path:
-                    asset = a
-                    break
+        asset = state_manager.find_asset_by_path(file_path)
         
         duration = 5.0
         if asset:

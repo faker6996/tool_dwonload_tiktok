@@ -159,6 +159,8 @@ class ExportDialog(QDialog):
                                     "path": clip.asset_id,
                                     "start": clip.start_time,
                                     "duration": clip.length,
+                                    "in_point": getattr(clip, "in_point", 0.0),
+                                    "out_point": getattr(clip, "out_point", 0.0),
                                     # Pass transform info for future use (e.g. blend modes)
                                     "blend_mode": getattr(clip, "blend_mode", "Normal"),
                                     "opacity": getattr(clip, "opacity", 1.0),

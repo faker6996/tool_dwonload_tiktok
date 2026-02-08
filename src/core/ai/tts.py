@@ -2,6 +2,9 @@ import os
 import asyncio
 import tempfile
 from typing import Optional
+from ..logging_utils import get_logger
+
+logger = get_logger(__name__)
 
 class TTSService:
     def __init__(self):
@@ -33,17 +36,17 @@ class TTSService:
         Returns:
             Path to the generated audio file
         """
-        if not output_path.endswith('.mp3'):
-            output_path = output_path.rsplit('.', 1)[0] + '.mp3'
-            
         voice = voice or self.default_voice
+        output_dir = os.path.dirname(output_path)
+        if output_dir:
+            os.makedirs(output_dir, exist_ok=True)
         
-        print(f"Generating speech for: '{text[:50]}...' with voice: {voice}")
+        logger.info("Generating speech for: '%s...' with voice: %s", text[:50], voice)
         
         # Run async function in sync context
         asyncio.run(self._generate_async(text, output_path, voice, rate, pitch))
         
-        print(f"Speech generated: {output_path}")
+        logger.info("Speech generated: %s", output_path)
         return output_path
 
     async def _generate_async(self, text: str, output_path: str, voice: str, rate: str, pitch: str):

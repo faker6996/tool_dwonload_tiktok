@@ -40,6 +40,18 @@ class StateManager(QObject):
     def get_asset(self, asset_id: str) -> Dict:
         return self.state["media_pool"]["assets"].get(asset_id)
 
+    def find_asset_by_path(self, file_path: str) -> Dict:
+        """
+        Find an asset by its original local file path.
+        Returns None if not found.
+        """
+        if not file_path:
+            return None
+        for asset in self.state["media_pool"]["assets"].values():
+            if asset.get("target_url") == file_path:
+                return asset
+        return None
+
     def remove_asset(self, asset_id: str):
         """
         Remove an asset from the media pool if it exists.

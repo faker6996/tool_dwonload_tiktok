@@ -6,6 +6,7 @@ from PyQt6.QtGui import QIcon, QDragEnterEvent, QDropEvent, QDrag, QPixmap, QCol
 import os
 
 from src.core.state import state_manager
+from src.core.api.stock_api import stock_api
 from src.ui.threads import IngestionThread
 
 
@@ -161,6 +162,19 @@ class MediaPool(QWidget):
         self.search_input.setPlaceholderText("Search assets...")
         self.search_input.textChanged.connect(self.filter_assets)
         header_layout.addWidget(self.search_input)
+
+        # Stock Search (compatibility with existing tests/workflows)
+        stock_search_row = QHBoxLayout()
+        stock_search_row.setSpacing(8)
+        self.stock_search_input = QLineEdit()
+        self.stock_search_input.setPlaceholderText("Search stock media...")
+        self.stock_search_input.returnPressed.connect(self.search_stock)
+        self.stock_search_btn = QPushButton("Search Stock")
+        self.stock_search_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.stock_search_btn.clicked.connect(self.search_stock)
+        stock_search_row.addWidget(self.stock_search_input)
+        stock_search_row.addWidget(self.stock_search_btn)
+        header_layout.addLayout(stock_search_row)
         
         layout.addWidget(header_container)
         
@@ -197,6 +211,23 @@ class MediaPool(QWidget):
         """)
         
         layout.addWidget(self.asset_list)
+
+        self.stock_list = QListWidget()
+        self.stock_list.setMaximumHeight(140)
+        self.stock_list.setStyleSheet("""
+            QListWidget {
+                background-color: #111111;
+                border-top: 1px solid #27272a;
+                border-left: none;
+                border-right: none;
+                border-bottom: none;
+                color: #d4d4d8;
+            }
+            QListWidget::item {
+                padding: 6px 8px;
+            }
+        """)
+        layout.addWidget(self.stock_list)
 
     def open_file_dialog(self):
         file_dialog = QFileDialog(self)
@@ -297,3 +328,16 @@ class MediaPool(QWidget):
         if item:
             row = self.asset_list.row(item)
             self.asset_list.takeItem(row)
+
+    def search_stock(self):
+        query = self.stock_search_input.text().strip()
+        self.stock_list.clear()
+        if not query:
+            return
+
+        results = stock_api.search_media(query, media_type="video")
+        for item in results:
+            title = item.get("title", "Untitled")
+            list_item = QListWidgetItem(title)
+            list_item.setData(Qt.ItemDataRole.UserRole, item)
+            self.stock_list.addItem(list_item)

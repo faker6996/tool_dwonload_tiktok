@@ -21,19 +21,23 @@ class TestExport(unittest.TestCase):
     def tearDown(self):
         shutil.rmtree(self.temp_dir)
 
-    def test_render_engine_mock(self):
+    def test_render_engine_handles_empty_timeline(self):
         output_path = os.path.join(self.temp_dir, "output.mp4")
         settings = {"resolution": "1920x1080", "fps": 30}
         
         # Track signals
         self.progress_values = []
         self.finished = False
+        self.success = None
+        self.message = ""
         
         def on_progress(val):
             self.progress_values.append(val)
             
         def on_finished(success, msg):
             self.finished = True
+            self.success = success
+            self.message = msg
             
         render_engine.progress_updated.connect(on_progress)
         render_engine.render_finished.connect(on_finished)
@@ -49,8 +53,10 @@ class TestExport(unittest.TestCase):
             time.sleep(0.1)
             
         self.assertTrue(self.finished)
-        self.assertTrue(len(self.progress_values) > 0)
-        self.assertTrue(os.path.exists(output_path))
+        self.assertFalse(self.success)
+        self.assertEqual(self.message, "No clips to render.")
+        self.assertEqual(self.progress_values, [])
+        self.assertFalse(os.path.exists(output_path))
 
 if __name__ == '__main__':
     unittest.main()

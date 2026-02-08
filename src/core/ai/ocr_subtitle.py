@@ -6,6 +6,9 @@ This is for videos with text overlays but no speech.
 import cv2
 import os
 from typing import List, Dict, Any, Optional, Tuple
+from ..logging_utils import get_logger
+
+logger = get_logger(__name__)
 
 
 class OCRSubtitleExtractor:
@@ -19,7 +22,7 @@ class OCRSubtitleExtractor:
         """Get or create EasyOCR reader."""
         if self._reader is None or self._lang_set != lang_set:
             import easyocr
-            print(f"🔍 Loading EasyOCR model for {lang_set}...")
+            logger.info("Loading EasyOCR model for %s...", lang_set)
             self._reader = easyocr.Reader(lang_set, gpu=True, verbose=False)
             self._lang_set = lang_set
         return self._reader
@@ -47,11 +50,11 @@ class OCRSubtitleExtractor:
         Returns:
             List of subtitle segments: {'start': float, 'end': float, 'text': str}
         """
-        print(f"📖 Starting OCR subtitle extraction from: {os.path.basename(video_path)}")
+        logger.info("Starting OCR subtitle extraction from: %s", os.path.basename(video_path))
         
         cap = cv2.VideoCapture(video_path)
         if not cap.isOpened():
-            print(f"❌ Cannot open video: {video_path}")
+            logger.warning("Cannot open video: %s", video_path)
             return []
         
         fps = cap.get(cv2.CAP_PROP_FPS)
@@ -60,7 +63,7 @@ class OCRSubtitleExtractor:
         height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
         duration = total_frames / fps
         
-        print(f"📐 Video: {width}x{height}, {fps:.1f}fps, {duration:.1f}s")
+        logger.info("Video: %sx%s, %.1ffps, %.1fs", width, height, fps, duration)
         
         # Calculate frame sampling
         frame_interval = int(fps / fps_sample)  # Sample every N frames
@@ -68,7 +71,7 @@ class OCRSubtitleExtractor:
             frame_interval = 1
         
         sample_frames = list(range(0, total_frames, frame_interval))
-        print(f"🎬 Sampling {len(sample_frames)} frames (every {frame_interval} frames)")
+        logger.info("Sampling %s frames (every %s frames)", len(sample_frames), frame_interval)
         
         # Try both Traditional and Simplified Chinese
         all_detections = []
@@ -78,7 +81,7 @@ class OCRSubtitleExtractor:
                 reader = self._get_reader(lang_set)
                 detections = []
                 
-                print(f"🔍 OCR scanning with {lang_set[0]}...")
+                logger.info("OCR scanning with %s...", lang_set[0])
                 
                 for i, frame_idx in enumerate(sample_frames):
                     cap.set(cv2.CAP_PROP_POS_FRAMES, frame_idx)
@@ -100,7 +103,7 @@ class OCRSubtitleExtractor:
                     for (bbox, text, prob) in results:
                         if prob >= min_confidence and text.strip():
                             frame_texts.append(text.strip())
-                            print(f"    📝 Detected: '{text[:30]}...' (conf: {prob:.2f})")
+                            logger.debug("Detected: '%s...' (conf: %.2f)", text[:30], prob)
                     
                     if frame_texts:
                         combined_text = ' '.join(frame_texts)
@@ -112,27 +115,27 @@ class OCRSubtitleExtractor:
                     
                     # Progress
                     if (i + 1) % 10 == 0:
-                        print(f"  Progress: {i+1}/{len(sample_frames)} frames")
+                        logger.info("OCR progress: %s/%s frames", i + 1, len(sample_frames))
                 
                 if detections:
-                    print(f"✅ Found {len(detections)} text occurrences using {lang_set[0]}")
+                    logger.info("Found %s text occurrences using %s", len(detections), lang_set[0])
                     all_detections = detections
                     break
                     
             except Exception as e:
-                print(f"⚠️ Error with {lang_set}: {e}")
+                logger.warning("OCR error with %s: %s", lang_set, e)
                 continue
         
         cap.release()
         
         if not all_detections:
-            print("⚠️ No subtitles detected in video")
+            logger.info("No subtitles detected in video")
             return []
         
         # Group similar consecutive texts into segments
         segments = self._group_into_segments(all_detections, frame_interval / fps)
         
-        print(f"📝 Created {len(segments)} subtitle segments")
+        logger.info("Created %s subtitle segments", len(segments))
         
         # Translate if requested
         if translate and target_lang:
@@ -214,7 +217,7 @@ class OCRSubtitleExtractor:
             from .translation import translation_service
             
             texts = [seg['text'] for seg in segments]
-            print(f"🌐 Translating {len(texts)} segments to {target_lang}...")
+            logger.info("Translating %s segments to %s...", len(texts), target_lang)
             
             # Batch translate
             translated = translation_service.translate_batch(
@@ -228,10 +231,10 @@ class OCRSubtitleExtractor:
                 if i < len(translated) and translated[i]:
                     seg['text'] = translated[i]
             
-            print(f"✅ Translation complete!")
+            logger.info("Translation complete")
             
         except Exception as e:
-            print(f"⚠️ Translation error: {e}")
+            logger.warning("Translation error: %s", e)
         
         return segments
 

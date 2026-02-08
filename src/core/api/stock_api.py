@@ -1,5 +1,8 @@
 import requests
 from typing import List, Dict
+from ..logging_utils import get_logger
+
+logger = get_logger(__name__)
 
 class StockAPI:
     def __init__(self):
@@ -11,7 +14,7 @@ class StockAPI:
         Returns a list of dicts with keys: id, url, thumbnail, title, duration.
         """
         # Mock implementation for MVP
-        print(f"Searching {self.provider} for '{query}' ({media_type})...")
+        logger.info("Searching %s for '%s' (%s)", self.provider, query, media_type)
         
         results = []
         for i in range(5):
@@ -30,7 +33,7 @@ class StockAPI:
         """
         Download media file from URL.
         """
-        print(f"Downloading {media_id} from {url} to {destination}...")
+        logger.info("Downloading %s from %s to %s", media_id, url, destination)
         # Simulating download
         # In real app: requests.get(url, stream=True) ...
         pass

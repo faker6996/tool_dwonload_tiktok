@@ -2,6 +2,9 @@ import re
 from .platforms.tiktok import TikTokDownloader
 from .platforms.douyin import DouyinDownloader
 from .platforms.generic import GenericDownloader
+from .logging_utils import get_logger
+
+logger = get_logger(__name__)
 
 class DownloaderManager:
     def __init__(self):
@@ -54,12 +57,12 @@ class DownloaderManager:
         try:
             # Simple check for short domains
             if any(short in url for short in ['vm.tiktok.com', 'vt.tiktok.com', 'v.douyin.com', 'fb.watch', 'bit.ly', 'goo.gl']):
-                print(f"Resolving short URL: {url}")
+                logger.info("Resolving short URL: %s", url)
                 response = requests.get(url, headers={"User-Agent": "Mozilla/5.0"}, allow_redirects=True, timeout=10)
-                print(f"Resolved to: {response.url}")
+                logger.info("Resolved short URL to: %s", response.url)
                 return response.url
         except Exception as e:
-            print(f"Failed to resolve: {e}")
+            logger.warning("Failed to resolve short URL: %s", e)
         return url
 
     def get_video_info(self, url):
@@ -69,7 +72,7 @@ class DownloaderManager:
         platform = self.detect_platform(url)
         downloader = self.get_downloader(platform)
         
-        print(f"Detected platform: {platform}")
+        logger.info("Detected platform: %s", platform)
         return downloader.extract_info(url)
 
     def download_video(self, video_url, filename, platform, cookies=None, user_agent=None):

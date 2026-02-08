@@ -1,5 +1,8 @@
 from ..base import BaseDownloader
 import yt_dlp
+from ..logging_utils import get_logger
+
+logger = get_logger(__name__)
 
 class GenericDownloader(BaseDownloader):
     def __init__(self, platform_name="generic"):
@@ -25,7 +28,7 @@ class GenericDownloader(BaseDownloader):
                         'cookies': None
                     }
         except Exception as e:
-            print(f"yt-dlp error for {self.platform_name}: {e}")
+            logger.warning("yt-dlp error for %s: %s", self.platform_name, e)
             return {'status': 'error', 'message': f'{self.platform_name} download failed: {str(e)}'}
             
         return {'status': 'error', 'message': f'Could not retrieve video URL for {self.platform_name}'}

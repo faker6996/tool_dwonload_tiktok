@@ -1,6 +1,9 @@
 from ..base import BaseDownloader
 from playwright.sync_api import sync_playwright
 import re
+from ..logging_utils import get_logger
+
+logger = get_logger(__name__)
 
 UA_DESKTOP = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/118.0.0.0 Safari/537.36"
 
@@ -30,7 +33,7 @@ class TikTokDownloader(BaseDownloader):
 
                 page.on('response', handle_response)
                 
-                print(f"Navigating to {url}...")
+                logger.info("Navigating to %s", url)
                 page.goto(url, wait_until="domcontentloaded", timeout=30000)
                 
                 # Wait a bit for the video to start loading
@@ -55,7 +58,7 @@ class TikTokDownloader(BaseDownloader):
                     return {'status': 'success', 'url': video_urls[0], 'platform': 'tiktok', 'cookies': cookie_dict}
                     
         except Exception as e:
-            print(f"TikTok extraction error: {e}")
+            logger.warning("TikTok extraction error: %s", e)
             pass
             
         return {'status': 'error', 'message': 'Could not retrieve TikTok video URL for preview'}

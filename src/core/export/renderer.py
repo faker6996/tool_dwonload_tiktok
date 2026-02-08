@@ -4,6 +4,9 @@ import sys
 import tempfile
 from typing import List, Dict, Optional, Tuple
 from PyQt6.QtCore import QObject, pyqtSignal
+from ..logging_utils import get_logger
+
+logger = get_logger(__name__)
 
 
 def get_ffmpeg_path() -> str:
@@ -26,11 +29,11 @@ def get_ffmpeg_path() -> str:
     
     for path in bundled_paths:
         if os.path.exists(path):
-            print(f"Using bundled FFmpeg: {path}")
+            logger.info("Using bundled FFmpeg: %s", path)
             return path
     
     # Fall back to system FFmpeg
-    print("Using system FFmpeg")
+    logger.info("Using system FFmpeg")
     return "ffmpeg"
 
 
@@ -68,13 +71,13 @@ class RenderEngine(QObject):
         self.subtitles = subtitles or []
         self.audio_tracks = audio_tracks or []
         
-        print(f"Starting render to {output_path} with settings {self.settings}")
+        logger.info("Starting render to %s with settings %s", output_path, self.settings)
         if self.stickers:
-            print(f"Rendering {len(self.stickers)} stickers")
+            logger.info("Rendering %s stickers", len(self.stickers))
         if self.subtitles:
-            print(f"Burning {len(self.subtitles)} subtitles into video")
+            logger.info("Burning %s subtitles into video", len(self.subtitles))
         if self.audio_tracks:
-            print(f"Mixing {len(self.audio_tracks)} audio tracks (TTS/voiceover)")
+            logger.info("Mixing %s audio tracks (TTS/voiceover)", len(self.audio_tracks))
 
         if not timeline_clips:
             self.render_finished.emit(False, "No clips to render.")
@@ -140,16 +143,49 @@ class RenderEngine(QObject):
         # Ensure directory exists
         os.makedirs(os.path.dirname(output_path) or ".", exist_ok=True)
 
-        # Create concat list file
+        def as_float(value, default: float = 0.0) -> float:
+            try:
+                return float(value)
+            except (TypeError, ValueError):
+                return default
+
+        ordered_clips = sorted(
+            clips,
+            key=lambda item: as_float(item.get("start", 0.0), 0.0),
+        )
+
+        # Create concat list file with per-clip trim directives.
         concat_fd, concat_path = tempfile.mkstemp(suffix=".txt", prefix="concat_", text=True)
+        written_count = 0
         with os.fdopen(concat_fd, "w") as f:
-            for clip in clips:
+            for clip in ordered_clips:
                 path = clip.get("path")
                 if not path:
                     continue
+                if not os.path.exists(path):
+                    logger.warning("Skipping missing clip path: %s", path)
+                    continue
+
+                in_point = max(0.0, as_float(clip.get("in_point", 0.0), 0.0))
+                duration = as_float(clip.get("duration", 0.0), 0.0)
+                out_point_raw = clip.get("out_point", None)
+                out_point = None
+                if out_point_raw not in (None, "", 0, 0.0):
+                    out_point = as_float(out_point_raw, 0.0)
+                elif duration > 0.0:
+                    out_point = in_point + duration
+
                 # FFmpeg concat demuxer format - escape single quotes
                 escaped_path = path.replace("'", "'\\''")
                 f.write(f"file '{escaped_path}'\n")
+                if in_point > 0.0:
+                    f.write(f"inpoint {in_point:.6f}\n")
+                if out_point is not None and out_point > in_point:
+                    f.write(f"outpoint {out_point:.6f}\n")
+                written_count += 1
+
+        if written_count == 0:
+            raise ValueError("No valid clip files to render.")
 
         resolution = self.settings.get("resolution", "1920x1080")
         fps_setting = self.settings.get("fps", 30)
@@ -196,9 +232,9 @@ class RenderEngine(QObject):
         # Parse resolution for sticker/subtitle positioning. If "original", detect from first clip.
         res_w, res_h = 1920, 1080
         first_path = ""
-        for clip in clips:
+        for clip in ordered_clips:
             p = clip.get("path")
-            if p:
+            if p and os.path.exists(p):
                 first_path = p
                 break
 
@@ -266,9 +302,9 @@ class RenderEngine(QObject):
                     sticker_overlays.append((abs_x, abs_y))
                         
             except ImportError as e:
-                print(f"Pillow not available for sticker export: {e}")
+                logger.warning("Pillow not available for sticker export: %s", e)
             except Exception as e:
-                print(f"Error creating sticker images: {e}")
+                logger.warning("Error creating sticker images: %s", e)
         
         # Store temp files for cleanup
         temp_files = list(temp_sticker_files)
@@ -302,9 +338,9 @@ class RenderEngine(QObject):
                     # Escape path for FFmpeg filter
                     escaped_path = subtitle_file.replace("\\", "/").replace(":", "\\:").replace("'", "\\'")
                     video_filters.append(f"subtitles='{escaped_path}'")
-                    print(f"Created subtitle file: {subtitle_file}")
+                    logger.info("Created subtitle file: %s", subtitle_file)
             except Exception as e:
-                print(f"Error creating subtitles: {e}")
+                logger.warning("Error creating subtitles: %s", e)
         if subtitle_file:
             temp_files.append(subtitle_file)
 
@@ -326,7 +362,7 @@ class RenderEngine(QObject):
                     audio_inputs.extend(["-i", audio_path])
             
             if audio_input_files:
-                print(f"Audio mix inputs: {len(audio_input_files)} track(s)")
+                logger.info("Audio mix inputs: %s track(s)", len(audio_input_files))
 
         # Add audio inputs after sticker inputs
         cmd.extend(audio_inputs)
@@ -426,7 +462,7 @@ class RenderEngine(QObject):
             output_path,
         ])
         
-        print(f"FFmpeg command: {' '.join(cmd)}")
+        logger.debug("FFmpeg command: %s", " ".join(cmd))
 
         return cmd, concat_path, temp_files
 

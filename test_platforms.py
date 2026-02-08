@@ -6,7 +6,7 @@ sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
 from src.core.manager import DownloaderManager
 
-def test_platform(name, url):
+def run_platform_check(name, url):
     print(f"\n--- Testing {name} ---")
     print(f"URL: {url}")
     manager = DownloaderManager()
@@ -35,7 +35,7 @@ if __name__ == "__main__":
 
     results = {}
     for name, url in samples.items():
-        results[name] = test_platform(name, url)
+        results[name] = run_platform_check(name, url)
 
     print("\n=== SUMMARY ===")
     for name, success in results.items():
