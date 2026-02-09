@@ -10,6 +10,7 @@ from src.core.manager import DownloaderManager
 from src.ui.widgets.bounded_combobox import BoundedComboBox
 from ..threads import AnalyzerThread, PreviewDownloaderThread, DownloaderThread, ChannelScraperThread
 import os
+import time
 
 
 class LoadingOverlay(QWidget):
@@ -80,10 +81,18 @@ class DownloadPage(QWidget):
         
         # State
         self.current_video_url = None
+        self.current_source_url = None
         self.current_platform = None
         self.current_cookies = None
         self.temp_preview_path = None
         self.video_title = None
+        self._active_download_mode = "video"
+        self._preview_skip_duration_seconds = 60 * 60  # Skip preview for videos >= 1 hour
+        self._analysis_stage_text = "Starting analysis..."
+        self._analysis_started_at = 0.0
+        self._analysis_timer = QTimer(self)
+        self._analysis_timer.setInterval(1000)
+        self._analysis_timer.timeout.connect(self._refresh_analysis_status)
         self.channel_videos = []  # List of videos from channel scan
 
     def setup_ui(self):
@@ -102,10 +111,11 @@ class DownloadPage(QWidget):
         
         self.mode_combo = BoundedComboBox()
         self.mode_combo.addItems([
-            "📹 Single Video",
-            "📂 Bulk from Channel",
-            "📄 Import from File"
+            "Single Video",
+            "Bulk from Channel",
+            "Import from File"
         ])
+        self.mode_combo.setMinimumWidth(220)
         self.mode_combo.currentIndexChanged.connect(self._on_mode_changed)
         mode_layout.addWidget(self.mode_combo)
         mode_layout.addStretch()
@@ -119,7 +129,7 @@ class DownloadPage(QWidget):
         # URL Input
         input_layout = QHBoxLayout()
         self.url_input = QLineEdit()
-        self.url_input.setPlaceholderText("Paste TikTok or Douyin link here...")
+        self.url_input.setPlaceholderText("Paste TikTok, Douyin, or YouTube link here...")
         self.url_input.returnPressed.connect(self.analyze_url)
         
         self.analyze_btn = QPushButton("Check Video")
@@ -183,6 +193,16 @@ class DownloadPage(QWidget):
         
         self.loading_overlay = LoadingOverlay(self.preview_frame)
         self.loading_overlay.hide()
+
+        format_layout = QHBoxLayout()
+        format_layout.addWidget(QLabel("Download Type:"))
+        self.download_type_combo = BoundedComboBox()
+        self.download_type_combo.addItem("MP4 Video", "video")
+        self.download_type_combo.addItem("MP3 Audio (YouTube)", "audio")
+        self.download_type_combo.currentIndexChanged.connect(self._on_download_type_changed)
+        format_layout.addWidget(self.download_type_combo)
+        format_layout.addStretch()
+        single_layout.addLayout(format_layout)
 
         # Download Button
         action_layout = QHBoxLayout()
@@ -354,6 +374,7 @@ class DownloadPage(QWidget):
             url = url_match.group(0)
         else:
             url = text
+        self.current_source_url = url
 
         self.status_label.setText("Analyzing URL... Please wait.")
         self.analyze_btn.setEnabled(False)
@@ -364,21 +385,48 @@ class DownloadPage(QWidget):
         if hasattr(self, "playback_rate_combo"):
             self.playback_rate_combo.setEnabled(False)
         self.temp_preview_path = None
+        self._analysis_stage_text = "Resolving URL..."
+        self._analysis_started_at = time.monotonic()
         
         self.loading_overlay.set_text("🔍 Analyzing URL...")
         self.loading_overlay.show()
+        self._analysis_timer.start()
+        self._refresh_analysis_status()
 
         self.analyzer_thread = AnalyzerThread(url)
+        self.analyzer_thread.progress.connect(self.on_analysis_progress)
         self.analyzer_thread.finished.connect(self.on_analysis_finished)
         self.analyzer_thread.start()
 
     def on_analysis_finished(self, info):
+        self._analysis_timer.stop()
         if info['status'] == 'success':
-            self.status_label.setText(f"Video found! Downloading preview...")
             self.current_video_url = info['url']
+            self.current_source_url = info.get("source_url", self.current_source_url)
             self.current_platform = info['platform']
             self.current_cookies = info.get('cookies')
             self.video_title = info.get('title', '')
+            analysis_seconds = float(info.get("analysis_seconds") or 0.0)
+
+            if self._should_skip_preview(info):
+                self.loading_overlay.hide()
+                self.reset_ui_state()
+                self.temp_preview_path = None
+                self.download_btn.setEnabled(True)
+                self.play_pause_btn.setEnabled(False)
+                if hasattr(self, "playback_rate_combo"):
+                    self.playback_rate_combo.setEnabled(False)
+
+                reason = "YouTube preview is skipped for faster analysis."
+                duration = self._safe_duration_seconds(info.get("duration"))
+                if duration >= self._preview_skip_duration_seconds:
+                    reason = "Preview skipped because video is too long."
+                self.status_label.setText(
+                    f"Video found in {analysis_seconds:.1f}s. {reason} Click save to download."
+                )
+                return
+
+            self.status_label.setText("Video found! Downloading preview...")
             
             self.loading_overlay.set_text("📥 Downloading preview...")
             
@@ -388,8 +436,39 @@ class DownloadPage(QWidget):
         else:
             self.loading_overlay.hide()
             self.reset_ui_state()
-            self.status_label.setText(f"Error: {info.get('message', 'Unknown error')}")
+            analysis_seconds = float(info.get("analysis_seconds") or 0.0)
+            self.status_label.setText(
+                f"Error after {analysis_seconds:.1f}s: {info.get('message', 'Unknown error')}"
+            )
             QMessageBox.warning(self, "Error", info.get('message', 'Could not analyze video'))
+
+    def on_analysis_progress(self, message: str):
+        if not message:
+            return
+        self._analysis_stage_text = str(message)
+        self._refresh_analysis_status()
+
+    def _refresh_analysis_status(self):
+        if self._analysis_started_at <= 0:
+            return
+        elapsed = max(0.0, time.monotonic() - self._analysis_started_at)
+        stage = self._analysis_stage_text or "Analyzing..."
+        text = f"{stage} ({elapsed:.0f}s)"
+        self.status_label.setText(text)
+        self.loading_overlay.set_text(f"🔍 {text}")
+
+    def _safe_duration_seconds(self, value):
+        try:
+            return float(value or 0.0)
+        except (TypeError, ValueError):
+            return 0.0
+
+    def _should_skip_preview(self, info: dict) -> bool:
+        platform = str(info.get("platform", "")).lower()
+        if platform == "youtube":
+            return True
+        duration = self._safe_duration_seconds(info.get("duration"))
+        return duration >= self._preview_skip_duration_seconds
 
     def on_preview_ready(self, success, path):
         self.reset_ui_state()
@@ -429,6 +508,53 @@ class DownloadPage(QWidget):
             # Keep UI responsive even if backend rejects the rate.
             pass
 
+    def _on_download_type_changed(self):
+        download_mode = self.download_type_combo.currentData() or "video"
+        if download_mode == "audio":
+            self.download_btn.setText("Save MP3")
+        else:
+            self.download_btn.setText("Save Video")
+
+    def _format_size(self, byte_count) -> str:
+        try:
+            value = float(byte_count or 0)
+        except (TypeError, ValueError):
+            value = 0.0
+        units = ["B", "KB", "MB", "GB", "TB"]
+        unit_index = 0
+        while value >= 1024.0 and unit_index < len(units) - 1:
+            value /= 1024.0
+            unit_index += 1
+        if unit_index == 0:
+            return f"{int(value)} {units[unit_index]}"
+        return f"{value:.1f} {units[unit_index]}"
+
+    def on_download_progress(self, downloaded, total):
+        try:
+            downloaded_value = int(downloaded or 0)
+        except Exception:
+            downloaded_value = 0
+        try:
+            total_value = int(total or 0)
+        except Exception:
+            total_value = 0
+
+        if total_value > 0:
+            percent = int(max(0, min(100, (downloaded_value * 100) / total_value)))
+            detail = f"{self._format_size(downloaded_value)} / {self._format_size(total_value)}"
+            self.progress_bar.setRange(0, 100)
+            self.progress_bar.setValue(percent)
+            self.progress_bar.setFormat(f"{percent}% ({detail})")
+            self.status_label.setText(f"Saving... {percent}% ({detail})")
+        else:
+            detail = self._format_size(downloaded_value)
+            self.progress_bar.setRange(0, 0)
+            self.progress_bar.setFormat(f"Saving... {detail}")
+            if downloaded_value > 0:
+                self.status_label.setText(f"Saving... {detail} (estimating total)")
+            else:
+                self.status_label.setText("Saving... preparing download")
+
     def download_video(self):
         if not self.current_video_url:
             return
@@ -445,18 +571,45 @@ class DownloadPage(QWidget):
         else:
             safe_title = f"video_{self.current_platform}_{int(time.time())}"
         
-        default_filename = f"{safe_title}.mp4"
+        download_mode = self.download_type_combo.currentData() or "video"
+        is_audio_mode = download_mode == "audio"
 
-        file_filter = "MP4 Video (*.mp4)"
-        filename, _ = QFileDialog.getSaveFileName(self, "Save Video", default_filename, file_filter)
+        if is_audio_mode and self.current_platform != "youtube":
+            QMessageBox.warning(
+                self,
+                "Unsupported Mode",
+                "MP3 mode currently supports YouTube links only.",
+            )
+            return
+
+        default_filename = f"{safe_title}.mp3" if is_audio_mode else f"{safe_title}.mp4"
+        file_filter = "MP3 Audio (*.mp3)" if is_audio_mode else "MP4 Video (*.mp4)"
+        dialog_title = "Save Audio" if is_audio_mode else "Save Video"
+        filename, _ = QFileDialog.getSaveFileName(self, dialog_title, default_filename, file_filter)
         
         if filename:
-            self.status_label.setText("Saving...")
+            if is_audio_mode and not filename.lower().endswith(".mp3"):
+                filename = f"{filename}.mp3"
+
+            self._active_download_mode = download_mode
+            self.status_label.setText("Saving... preparing download")
             self.download_btn.setEnabled(False)
             self.progress_bar.setVisible(True)
-            self.progress_bar.setRange(0, 0)
+            self.progress_bar.setTextVisible(True)
+            self.progress_bar.setRange(0, 100)
+            self.progress_bar.setValue(0)
+            self.progress_bar.setFormat("0%")
             
-            self.downloader_thread = DownloaderThread(self.current_video_url, filename, self.current_platform, self.temp_preview_path, self.current_cookies)
+            self.downloader_thread = DownloaderThread(
+                self.current_video_url,
+                filename,
+                self.current_platform,
+                self.temp_preview_path,
+                self.current_cookies,
+                download_mode=download_mode,
+                source_url=self.current_source_url,
+            )
+            self.downloader_thread.progress.connect(self.on_download_progress)
             self.downloader_thread.finished.connect(self.on_download_finished)
             self.downloader_thread.start()
 
@@ -468,10 +621,13 @@ class DownloadPage(QWidget):
         
         if success:
             self.status_label.setText("Saved successfully!")
-            QMessageBox.information(self, "Success", f"Video saved to:\n{filename}")
+            if self._active_download_mode == "audio":
+                QMessageBox.information(self, "Success", f"Audio saved to:\n{filename}")
+            else:
+                QMessageBox.information(self, "Success", f"Video saved to:\n{filename}")
         else:
             self.status_label.setText("Save failed.")
-            QMessageBox.critical(self, "Error", "Failed to save video.")
+            QMessageBox.critical(self, "Error", "Failed to save media.")
     
     def toggle_play_pause(self):
         if self.media_player.playbackState() == QMediaPlayer.PlaybackState.PlayingState:

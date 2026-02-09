@@ -11,30 +11,50 @@ class DouyinDownloader(BaseDownloader):
     def __init__(self):
         self.cookies_from_browser = 'chrome'
         
-    def extract_info(self, url):
+    def extract_info(self, url, status_callback=None):
         """Extract video info - try yt-dlp first, then Playwright."""
+        def _notify(message: str):
+            if not status_callback:
+                return
+            try:
+                status_callback(message)
+            except Exception:
+                pass
+
         logger.info("Extracting Douyin video: %s", url)
+        _notify("Trying yt-dlp metadata path...")
         
         # Try yt-dlp with browser cookies first
-        result = self._try_ytdlp(url)
+        result = self._try_ytdlp(url, status_callback=status_callback)
         if result.get('status') == 'success':
             return result
         
         # Fallback to Playwright (opens browser for manual interaction)
         logger.info("yt-dlp failed, trying Playwright browser capture")
-        return self._try_playwright(url)
+        _notify("yt-dlp failed, switching to browser capture...")
+        return self._try_playwright(url, status_callback=status_callback)
     
-    def _try_ytdlp(self, url):
+    def _try_ytdlp(self, url, status_callback=None):
         """Try downloading with yt-dlp and browser cookies."""
+        def _notify(message: str):
+            if not status_callback:
+                return
+            try:
+                status_callback(message)
+            except Exception:
+                pass
+
         ydl_opts = {
             'quiet': True,
             'no_warnings': True,
             'extract_flat': False,
             'user_agent': UA_DESKTOP,
+            'socket_timeout': 15,
         }
         
         for browser in ['chrome', 'firefox', 'safari']:
             try:
+                _notify(f"Trying cookies from {browser}...")
                 ydl_opts['cookiesfrombrowser'] = (browser,)
                 with yt_dlp.YoutubeDL(ydl_opts) as ydl:
                     info = ydl.extract_info(url, download=False)
@@ -48,6 +68,7 @@ class DouyinDownloader(BaseDownloader):
                         if not video_url and info.get('url'):
                             video_url = info['url']
                         if video_url:
+                            _notify("Metadata ready")
                             return {
                                 'status': 'success',
                                 'url': video_url,
@@ -59,8 +80,16 @@ class DouyinDownloader(BaseDownloader):
         
         return {'status': 'error', 'message': 'yt-dlp failed'}
     
-    def _try_playwright(self, url):
+    def _try_playwright(self, url, status_callback=None):
         """Open browser for manual interaction and capture video URL."""
+        def _notify(message: str):
+            if not status_callback:
+                return
+            try:
+                status_callback(message)
+            except Exception:
+                pass
+
         try:
             from playwright.sync_api import sync_playwright
         except ImportError:
@@ -77,6 +106,7 @@ class DouyinDownloader(BaseDownloader):
                 logger.info("Mo browser de tai video Douyin...")
                 logger.info("Neu can dang nhap hoac giai captcha, vui long thao tac")
                 logger.info("%s", "=" * 50)
+                _notify("Opening browser for manual Douyin capture...")
                 
                 browser = p.chromium.launch(
                     headless=False,
@@ -125,6 +155,7 @@ class DouyinDownloader(BaseDownloader):
                 page.on('response', handle_response)
                 
                 logger.info("Navigating to: %s", url)
+                _notify("Loading Douyin page in browser...")
                 try:
                     page.goto(url, wait_until="domcontentloaded", timeout=60000)
                 except:
@@ -173,6 +204,7 @@ class DouyinDownloader(BaseDownloader):
                 # Wait for video to load (up to 60 seconds)
                 logger.info("Dang cho video load...")
                 logger.info("Neu can dang nhap/giai captcha, vui long thao tac trong browser")
+                _notify("Waiting for video stream (captcha/login may be required)...")
                 
                 for i in range(30):
                     if state['video_url']:
@@ -214,7 +246,7 @@ class DouyinDownloader(BaseDownloader):
                 'message': f'Browser error: {str(e)}'
             }
     
-    def download(self, url, output_path, cookies=None, user_agent=None):
+    def download(self, url, output_path, cookies=None, user_agent=None, progress_callback=None):
         """Download video to file."""
         info = self.extract_info(url)
         
@@ -235,6 +267,7 @@ class DouyinDownloader(BaseDownloader):
                 user_agent=user_agent or UA_DESKTOP,
                 extra_headers={'Referer': 'https://www.douyin.com/'},
                 timeout=60,
+                progress_callback=progress_callback,
             )
 
             if success and os.path.exists(output_path) and os.path.getsize(output_path) > 10000:

@@ -1,14 +1,14 @@
 from abc import ABC, abstractmethod
 import os
 import tempfile
-from typing import Dict, Optional
+from typing import Callable, Dict, Optional
 from .logging_utils import get_logger
 
 logger = get_logger(__name__)
 
 class BaseDownloader(ABC):
     @abstractmethod
-    def extract_info(self, url):
+    def extract_info(self, url, status_callback=None):
         """
         Extract video information.
         Returns dict: {'status': 'success'/'error', 'url': direct_url, 'platform': '...', 'cookies': ...}
@@ -23,6 +23,7 @@ class BaseDownloader(ABC):
         user_agent: Optional[str] = None,
         extra_headers: Optional[Dict[str, str]] = None,
         timeout: int = 30,
+        progress_callback: Optional[Callable[[int, int], None]] = None,
     ) -> bool:
         """
         Download video from direct URL.
@@ -62,13 +63,40 @@ class BaseDownloader(ABC):
                     logger.warning("Download failed with status: %s", response.status_code)
                     return False
 
+                total_size = 0
+                try:
+                    total_size = int(response.headers.get("content-length", 0))
+                except Exception:
+                    total_size = 0
+
                 with open(temp_path, "wb") as file_obj:
+                    downloaded = 0
+                    if progress_callback:
+                        try:
+                            progress_callback(0, total_size)
+                        except Exception:
+                            pass
                     for chunk in response.iter_content(chunk_size=8192):
                         if chunk:
                             file_obj.write(chunk)
+                            downloaded += len(chunk)
+                            if progress_callback:
+                                try:
+                                    progress_callback(downloaded, total_size)
+                                except Exception:
+                                    pass
 
             # Atomic replace avoids leaving partially-written destination files.
             os.replace(temp_path, filename)
+            if progress_callback:
+                try:
+                    final_size = os.path.getsize(filename)
+                except OSError:
+                    final_size = 0
+                try:
+                    progress_callback(final_size, final_size)
+                except Exception:
+                    pass
             return True
         except requests.RequestException as e:
             logger.warning("Download request error: %s", e)

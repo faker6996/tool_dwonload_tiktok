@@ -20,7 +20,7 @@ DARK_THEME = f"""
 QWidget {{
     background-color: {COLORS['bg_main']};
     color: {COLORS['text_primary']};
-    font-family: "Segoe UI", "Inter", sans-serif;
+    font-family: "Arial", sans-serif;
     font-size: 13px;
     selection-background-color: {COLORS['accent']};
     selection-color: #ffffff;
@@ -126,8 +126,8 @@ QComboBox {{
     background-color: {COLORS['bg_canvas']};
     border: 1px solid {COLORS['border']};
     border-radius: 4px;
-    padding: 6px 10px;
-    min-height: 28px;
+    padding: 5px 10px;
+    min-height: 30px;
     color: {COLORS['text_primary']};
 }}
 QComboBox:focus {{
@@ -136,18 +136,21 @@ QComboBox:focus {{
 QComboBox QAbstractItemView {{
     background-color: {COLORS['bg_panel']};
     color: {COLORS['text_primary']};
-    selection-background-color: {COLORS['accent']};
+    selection-background-color: transparent;
     selection-color: #ffffff;
     border: 1px solid {COLORS['border']};
     outline: 0;
-    padding: 4px 0;
+    padding: 4px;
     max-height: 280px;
 }}
 QComboBox QAbstractItemView::item {{
     background-color: transparent;
     color: {COLORS['text_primary']};
-    padding: 6px 10px;
-    height: 28px;
+    min-height: 26px;
+    padding: 4px 10px;
+    margin: 1px 2px;
+    border-radius: 4px;
+    border: none;
 }}
 QComboBox QAbstractItemView::item:hover {{
     background-color: rgba(255, 255, 255, 0.05);

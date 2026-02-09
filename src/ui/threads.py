@@ -2,10 +2,10 @@ from PyQt6.QtCore import QThread, pyqtSignal
 from src.core.manager import DownloaderManager
 import os
 import tempfile
-import shutil
 
 class AnalyzerThread(QThread):
     finished = pyqtSignal(dict)
+    progress = pyqtSignal(str)
     
     def __init__(self, url):
         super().__init__()
@@ -13,7 +13,11 @@ class AnalyzerThread(QThread):
         self.downloader = DownloaderManager()
 
     def run(self):
-        info = self.downloader.get_video_info(self.url)
+        def _emit_progress(message: str):
+            if message:
+                self.progress.emit(str(message))
+
+        info = self.downloader.get_video_info(self.url, status_callback=_emit_progress)
         self.finished.emit(info)
 
 class PreviewDownloaderThread(QThread):
@@ -47,28 +51,97 @@ class PreviewDownloaderThread(QThread):
 
 class DownloaderThread(QThread):
     finished = pyqtSignal(bool, str)
+    progress = pyqtSignal(object, object)
     
-    def __init__(self, url, filename, platform, source_path=None, cookies=None):
+    def __init__(
+        self,
+        url,
+        filename,
+        platform,
+        source_path=None,
+        cookies=None,
+        download_mode="video",
+        source_url=None,
+    ):
         super().__init__()
         self.url = url
         self.filename = filename
         self.platform = platform
         self.source_path = source_path
         self.cookies = cookies
+        self.download_mode = download_mode
+        self.source_url = source_url
         self.downloader = DownloaderManager()
 
+    def _emit_progress(self, downloaded, total):
+        try:
+            downloaded_value = int(downloaded or 0)
+        except Exception:
+            downloaded_value = 0
+        try:
+            total_value = int(total or 0)
+        except Exception:
+            total_value = 0
+        self.progress.emit(downloaded_value, total_value)
+
+    def _copy_with_progress(self, source_path: str, destination_path: str) -> bool:
+        total_size = 0
+        try:
+            total_size = os.path.getsize(source_path)
+        except OSError:
+            total_size = 0
+
+        copied = 0
+        chunk_size = 1024 * 1024
+        os.makedirs(os.path.dirname(os.path.abspath(destination_path)) or ".", exist_ok=True)
+
+        with open(source_path, "rb") as src, open(destination_path, "wb") as dst:
+            while True:
+                chunk = src.read(chunk_size)
+                if not chunk:
+                    break
+                dst.write(chunk)
+                copied += len(chunk)
+                self._emit_progress(copied, total_size)
+        self._emit_progress(total_size or copied, total_size or copied)
+        return True
+
     def run(self):
+        self._emit_progress(0, 0)
+        if self.download_mode == "audio":
+            source_url = self.source_url or self.url
+            result = self.downloader.download_audio(
+                source_url,
+                self.filename,
+                self.platform,
+                self.cookies,
+                progress_callback=self._emit_progress,
+            )
+            success = bool(result)
+            self.finished.emit(success, self.filename)
+            return
+
         if self.source_path and os.path.exists(self.source_path):
             # Copy from temp file if available
             try:
-                shutil.copy2(self.source_path, self.filename)
+                self._copy_with_progress(self.source_path, self.filename)
                 self.finished.emit(True, self.filename)
                 return
             except Exception as e:
                 print(f"Copy failed: {e}")
                 # Fallback to download
-        
-        result = self.downloader.download_video(self.url, self.filename, self.platform, self.cookies)
+
+        download_url = self.url
+        if self.platform == "youtube" and self.source_url:
+            download_url = self.source_url
+
+        result = self.downloader.download_video(
+            download_url,
+            self.filename,
+            self.platform,
+            self.cookies,
+            progress_callback=self._emit_progress,
+        )
         
         # Handle both dict and bool return types
         if isinstance(result, dict):

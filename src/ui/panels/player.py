@@ -717,9 +717,6 @@ class Player(QFrame):
                 font-weight: bold;
                 font-family: Arial, sans-serif;
                 padding: 6px 12px;
-                /* Text shadow to simulate outline like in exported video */
-                text-shadow: 1px 1px 2px black, -1px -1px 2px black, 
-                             1px -1px 2px black, -1px 1px 2px black;
             }
         """)
         self.subtitle_label.setMinimumWidth(200)
