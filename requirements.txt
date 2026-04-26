@@ -26,6 +26,7 @@ playwright
 
 # Build
 pyinstaller
+maturin
 
 # Optional - for audio duration detection
 mutagen

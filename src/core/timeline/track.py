@@ -2,6 +2,7 @@ from copy import deepcopy
 from typing import List, Optional
 import uuid
 from .clip import Clip
+from .rust_adapter import NativeMagneticTimeline, is_rust_timeline_available
 
 class Track:
     """
@@ -71,6 +72,9 @@ class MagneticTrack(Track):
     """
     def __init__(self, name: str = "Main Track"):
         super().__init__(name, is_audio=False)
+        self._native_timeline = (
+            NativeMagneticTimeline(name) if is_rust_timeline_available() else None
+        )
 
     def add_clip(self, clip: Clip, position: Optional[float] = None) -> bool:
         """
@@ -80,6 +84,12 @@ class MagneticTrack(Track):
         if self.is_locked:
             return False
 
+        if self._native_timeline:
+            return self._native_timeline.add_clip(self.clips, clip, position)
+
+        return self._add_clip_python(clip, position)
+
+    def _add_clip_python(self, clip: Clip, position: Optional[float] = None) -> bool:
         # In magnetic track, position is less strict. 
         # If position is provided, we might split or insert.
         # For simple append:
@@ -115,6 +125,13 @@ class MagneticTrack(Track):
         """
         if self.is_locked:
             return None
+
+        if self._native_timeline:
+            return self._native_timeline.remove_clip(self.clips, clip_id)
+
+        return self._remove_clip_python(clip_id)
+
+    def _remove_clip_python(self, clip_id: str) -> Optional[Clip]:
             
         removed_clip = None
         remove_index = -1
@@ -142,6 +159,12 @@ class MagneticTrack(Track):
         if self.is_locked:
             return None
 
+        if self._native_timeline:
+            return self._native_timeline.split_clip(self.clips, clip_id, timeline_time)
+
+        return self._split_clip_python(clip_id, timeline_time)
+
+    def _split_clip_python(self, clip_id: str, timeline_time: float) -> Optional[Clip]:
         clip_index = self.get_clip_index(clip_id)
         if clip_index < 0:
             return None
@@ -179,6 +202,22 @@ class MagneticTrack(Track):
         if self.is_locked:
             return False
 
+        if self._native_timeline:
+            return self._native_timeline.trim_clip(
+                self.clips,
+                clip_id,
+                new_in_point,
+                new_out_point,
+            )
+
+        return self._trim_clip_python(clip_id, new_in_point, new_out_point)
+
+    def _trim_clip_python(
+        self,
+        clip_id: str,
+        new_in_point: Optional[float] = None,
+        new_out_point: Optional[float] = None,
+    ) -> bool:
         clip_index = self.get_clip_index(clip_id)
         if clip_index < 0:
             return False

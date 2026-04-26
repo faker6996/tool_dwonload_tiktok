@@ -2,6 +2,7 @@ import requests
 import os
 from typing import List, Dict, Optional, Callable
 from ..logging_utils import get_logger
+from ..media_validation import validate_media_file
 
 logger = get_logger(__name__)
 
@@ -142,6 +143,10 @@ class StockAPI:
 
                 if progress_callback:
                     progress_callback(bytes_written, total_bytes)
+
+            validation = validate_media_file(temp_destination, expected_kind="video")
+            if not validation.ok:
+                raise RuntimeError(f"Downloaded media validation failed: {validation.reason}")
 
             os.replace(temp_destination, destination)
             return destination

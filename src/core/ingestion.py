@@ -5,6 +5,7 @@ import hashlib
 import shutil
 from typing import Dict, Optional
 from .logging_utils import get_logger
+from .media_validation import validate_media_file
 
 logger = get_logger(__name__)
 
@@ -17,6 +18,11 @@ class MediaIngestion:
         """
         Run ffprobe to extract metadata from the file.
         """
+        validation = validate_media_file(file_path)
+        if not validation.ok:
+            logger.warning("Media validation failed for %s: %s", file_path, validation.reason)
+            return None
+
         cmd = [
             "ffprobe",
             "-v", "quiet",

@@ -3,6 +3,7 @@ import os
 import tempfile
 from typing import Callable, Dict, Optional
 from .logging_utils import get_logger
+from .media_validation import validate_media_file
 
 logger = get_logger(__name__)
 
@@ -85,6 +86,11 @@ class BaseDownloader(ABC):
                                     progress_callback(downloaded, total_size)
                                 except Exception:
                                     pass
+
+            validation = validate_media_file(temp_path)
+            if not validation.ok:
+                logger.warning("Downloaded media validation failed: %s", validation.reason)
+                return False
 
             # Atomic replace avoids leaving partially-written destination files.
             os.replace(temp_path, filename)

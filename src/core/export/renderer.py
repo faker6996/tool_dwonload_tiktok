@@ -1,10 +1,13 @@
 import subprocess
 import os
 import sys
-import tempfile
 from typing import List, Dict, Optional, Tuple
 from PyQt6.QtCore import QObject, pyqtSignal
 from ..logging_utils import get_logger
+from .command_plan import build_output_command_plan
+from .filter_graph import build_filter_graph
+from .input_plan import build_input_asset_plan
+from .planner import build_export_plan
 
 logger = get_logger(__name__)
 
@@ -143,171 +146,17 @@ class RenderEngine(QObject):
         # Ensure directory exists
         os.makedirs(os.path.dirname(output_path) or ".", exist_ok=True)
 
-        def as_float(value, default: float = 0.0) -> float:
-            try:
-                return float(value)
-            except (TypeError, ValueError):
-                return default
-
-        ordered_clips = sorted(
+        export_plan = build_export_plan(
             clips,
-            key=lambda item: as_float(item.get("start", 0.0), 0.0),
+            self.settings,
+            getattr(self, "stickers", []),
+            getattr(self, "subtitles", []),
+            getattr(self, "audio_tracks", []),
         )
+        for warning in export_plan.warnings:
+            logger.warning(warning)
 
-        # Create concat list file with per-clip trim directives.
-        concat_fd, concat_path = tempfile.mkstemp(suffix=".txt", prefix="concat_", text=True)
-        written_count = 0
-        with os.fdopen(concat_fd, "w") as f:
-            for clip in ordered_clips:
-                path = clip.get("path")
-                if not path:
-                    continue
-                if not os.path.exists(path):
-                    logger.warning("Skipping missing clip path: %s", path)
-                    continue
-
-                in_point = max(0.0, as_float(clip.get("in_point", 0.0), 0.0))
-                duration = as_float(clip.get("duration", 0.0), 0.0)
-                out_point_raw = clip.get("out_point", None)
-                out_point = None
-                if out_point_raw not in (None, "", 0, 0.0):
-                    out_point = as_float(out_point_raw, 0.0)
-                elif duration > 0.0:
-                    out_point = in_point + duration
-
-                # FFmpeg concat demuxer format - escape single quotes
-                escaped_path = path.replace("'", "'\\''")
-                f.write(f"file '{escaped_path}'\n")
-                if in_point > 0.0:
-                    f.write(f"inpoint {in_point:.6f}\n")
-                if out_point is not None and out_point > in_point:
-                    f.write(f"outpoint {out_point:.6f}\n")
-                written_count += 1
-
-        if written_count == 0:
-            raise ValueError("No valid clip files to render.")
-
-        resolution = self.settings.get("resolution", "1920x1080")
-        fps_setting = self.settings.get("fps", 30)
-        speed_setting = self.settings.get("speed", self.settings.get("export_speed", 1.0))
-        try:
-            speed = float(speed_setting)
-        except Exception:
-            speed = 1.0
-        if speed <= 0:
-            speed = 1.0
-
-        def get_source_resolution(video_path: str) -> Optional[Tuple[int, int]]:
-            try:
-                import cv2  # type: ignore
-            except Exception:
-                return None
-
-            cap = cv2.VideoCapture(video_path)
-            try:
-                if not cap.isOpened():
-                    return None
-                width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH) or 0)
-                height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT) or 0)
-                if width > 0 and height > 0:
-                    return width, height
-                return None
-            finally:
-                cap.release()
-
-        def source_has_audio(video_path: str) -> bool:
-            if not video_path:
-                return False
-            try:
-                probe = subprocess.run(
-                    [self.ffmpeg_path, "-hide_banner", "-i", video_path],
-                    capture_output=True,
-                    text=True,
-                )
-                stderr = (probe.stderr or "") + (probe.stdout or "")
-                return "Audio:" in stderr
-            except Exception:
-                return False
-
-        # Parse resolution for sticker/subtitle positioning. If "original", detect from first clip.
-        res_w, res_h = 1920, 1080
-        first_path = ""
-        for clip in ordered_clips:
-            p = clip.get("path")
-            if p and os.path.exists(p):
-                first_path = p
-                break
-
-        if isinstance(resolution, str) and resolution.lower() == "original":
-            detected = get_source_resolution(first_path) if first_path else None
-            if detected:
-                res_w, res_h = detected
-        else:
-            try:
-                res_w, res_h = map(int, str(resolution).split("x"))
-            except Exception:
-                res_w, res_h = 1920, 1080
-
-        # Create sticker images and prepare overlay data
-        sticker_inputs = []  # Additional input files for stickers
-        sticker_overlays = []  # (abs_x, abs_y) per sticker input
-        temp_sticker_files = []
-        
-        stickers_list = getattr(self, "stickers", [])
-        if stickers_list:
-            try:
-                from PIL import Image, ImageDraw, ImageFont
-                import platform
-                
-                for idx, sticker in enumerate(stickers_list):
-                    content = sticker.get("content", "")
-                    if not content:
-                        continue
-                    
-                    # Position relative to center - convert to absolute coords
-                    x = sticker.get("x", 0)
-                    y = sticker.get("y", 0)
-                    scale = sticker.get("scale", 1.0)
-                    
-                    # Create PNG image with emoji
-                    img_size = int(200 * scale)
-                    img = Image.new("RGBA", (img_size, img_size), (0, 0, 0, 0))
-                    draw = ImageDraw.Draw(img)
-                    
-                    # Try to load emoji font
-                    font_size = int(100 * scale)
-                    try:
-                        if platform.system() == "Darwin":  # macOS
-                            font = ImageFont.truetype("/System/Library/Fonts/Apple Color Emoji.ttc", font_size)
-                        else:
-                            font = ImageFont.truetype("/usr/share/fonts/truetype/noto/NotoColorEmoji.ttf", font_size)
-                    except:
-                        font = ImageFont.load_default()
-                    
-                    # Draw emoji centered
-                    draw.text((img_size//2, img_size//2), content, font=font, anchor="mm")
-                    
-                    # Save temporary PNG
-                    sticker_fd, sticker_path = tempfile.mkstemp(suffix=f"_sticker_{idx}.png", prefix="export_")
-                    os.close(sticker_fd)
-                    img.save(sticker_path, "PNG")
-                    temp_sticker_files.append(sticker_path)
-                    
-                    # Calculate absolute position
-                    abs_x = int(res_w / 2 + x - img_size / 2)
-                    abs_y = int(res_h / 2 + y - img_size / 2)
-                    
-                    # Add input and overlay data
-                    sticker_inputs.append(sticker_path)
-                    sticker_overlays.append((abs_x, abs_y))
-                        
-            except ImportError as e:
-                logger.warning("Pillow not available for sticker export: %s", e)
-            except Exception as e:
-                logger.warning("Error creating sticker images: %s", e)
-        
-        # Store temp files for cleanup
-        temp_files = list(temp_sticker_files)
+        input_plan = build_input_asset_plan(export_plan, self.ffmpeg_path)
 
         cmd = [
             self.ffmpeg_path,
@@ -317,218 +166,37 @@ class RenderEngine(QObject):
             "-safe",
             "0",
             "-i",
-            concat_path,
+            input_plan.concat_path,
         ]
 
-        # Add sticker image inputs
-        for sticker_path in sticker_inputs:
-            cmd.extend(["-i", sticker_path])
+        cmd.extend(input_plan.additional_input_args)
+
+        output_command_plan = build_output_command_plan(export_plan)
+        cmd.extend(output_command_plan.fps_args)
+        cmd.extend(output_command_plan.size_args)
         
-        # Build video filter chain
-        video_filters = []
-        
-        # Add subtitles filter if we have subtitles
-        subtitles_list = getattr(self, "subtitles", [])
-        subtitle_file = None
-        if subtitles_list:
-            try:
-                # Create ASS subtitle file
-                subtitle_file = self._create_ass_subtitle_file(subtitles_list, res_w, res_h)
-                if subtitle_file:
-                    # Escape path for FFmpeg filter
-                    escaped_path = subtitle_file.replace("\\", "/").replace(":", "\\:").replace("'", "\\'")
-                    video_filters.append(f"subtitles='{escaped_path}'")
-                    logger.info("Created subtitle file: %s", subtitle_file)
-            except Exception as e:
-                logger.warning("Error creating subtitles: %s", e)
-        if subtitle_file:
-            temp_files.append(subtitle_file)
-
-        # Export speed (video) - apply after subtitle burn-in so subtitle timing scales with speed.
-        if abs(speed - 1.0) > 1e-6:
-            video_filters.append(f"setpts=PTS/{speed:g}")
-        
-        # Build audio mixing if we have TTS/audio tracks
-        audio_tracks_list = getattr(self, "audio_tracks", [])
-        audio_inputs = []
-        audio_input_files = []
-        
-        if audio_tracks_list:
-            # Add each audio file as input
-            for audio in audio_tracks_list:
-                audio_path = audio.get("path", "")
-                if audio_path and os.path.exists(audio_path):
-                    audio_input_files.append(audio_path)
-                    audio_inputs.extend(["-i", audio_path])
-            
-            if audio_input_files:
-                logger.info("Audio mix inputs: %s track(s)", len(audio_input_files))
-
-        # Add audio inputs after sticker inputs
-        cmd.extend(audio_inputs)
-
-        if not (isinstance(fps_setting, str) and fps_setting.lower() == "original"):
-            try:
-                fps_value = float(fps_setting)
-                if fps_value > 0:
-                    cmd.extend(["-r", str(fps_value)])
-            except Exception:
-                cmd.extend(["-r", "30"])
-        if not (isinstance(resolution, str) and resolution.lower() == "original"):
-            cmd.extend(["-s", str(resolution)])
-        
-        # Build filter_complex if needed
-        needs_filter_complex = bool(video_filters or sticker_inputs or audio_input_files)
-        if needs_filter_complex:
-            filter_parts = []
-
-            # Video chain
-            video_map_label = "0:v"
-            video_graph_label = "[0:v]"
-            if video_filters:
-                filter_parts.append(f"[0:v]{','.join(video_filters)}[v0]")
-                video_graph_label = "[v0]"
-                video_map_label = "[v0]"
-
-            if sticker_inputs:
-                base_index = 1
-                prev_label = video_graph_label
-                for i, (abs_x, abs_y) in enumerate(sticker_overlays):
-                    sticker_label = f"[{base_index + i}:v]"
-                    out_label = f"[v{i + 1}]"
-                    filter_parts.append(f"{prev_label}{sticker_label}overlay={abs_x}:{abs_y}{out_label}")
-                    prev_label = out_label
-                video_graph_label = prev_label
-                video_map_label = prev_label
-
-            # Audio chain
-            audio_output_label = ""
-            has_source_audio = source_has_audio(first_path)
-            wants_audio_speed = abs(speed - 1.0) > 1e-6
-            audio_base_label = ""
-
-            if audio_input_files:
-                audio_base_index = 1 + len(sticker_inputs)
-                mix_labels = []
-                if has_source_audio:
-                    filter_parts.append("[0:a]volume=0.5[orig]")
-                    mix_labels.append("[orig]")
-                mix_labels.extend(
-                    f"[{audio_base_index + i}:a]" for i in range(len(audio_input_files))
-                )
-
-                if len(mix_labels) == 1:
-                    filter_parts.append(f"{mix_labels[0]}anull[aout]")
-                    audio_base_label = "[aout]"
-                else:
-                    filter_parts.append(
-                        f"{''.join(mix_labels)}amix=inputs={len(mix_labels)}:duration=longest[aout]"
-                    )
-                    audio_base_label = "[aout]"
-            elif wants_audio_speed and has_source_audio:
-                audio_base_label = "[0:a]"
-
-            if wants_audio_speed and audio_base_label:
-                filter_parts.append(f"{audio_base_label}atempo={speed:g}[aout_speed]")
-                audio_output_label = "[aout_speed]"
-            else:
-                audio_output_label = audio_base_label
-
-            cmd.extend(["-filter_complex", ";".join(filter_parts)])
-
-            # Map outputs
-            cmd.extend(["-map", video_map_label])
-            if audio_output_label:
-                cmd.extend(["-map", audio_output_label])
-            else:
-                cmd.extend(["-map", "0:a?"])
-
-            cmd.extend(["-c:a", "aac", "-b:a", "192k"])
+        filter_graph = build_filter_graph(
+            export_plan=export_plan,
+            video_filters=input_plan.video_filters,
+            sticker_overlays=input_plan.sticker_overlays,
+            sticker_input_count=input_plan.sticker_input_count,
+            audio_input_count=input_plan.audio_input_count,
+            has_source_audio=input_plan.has_source_audio,
+        )
+        if filter_graph.needs_filter_complex:
+            cmd.extend(["-filter_complex", filter_graph.filter_complex])
+            cmd.extend(filter_graph.map_args)
+            cmd.extend(output_command_plan.audio_codec_args)
         else:
             cmd.extend(["-map", "0:v", "-map", "0:a?"])
-            cmd.extend(["-c:a", "aac", "-b:a", "192k"])
+            cmd.extend(output_command_plan.audio_codec_args)
         
-        cmd.extend([
-            "-c:v",
-            "libx264",
-            "-preset",
-            "fast",
-            "-crf",
-            "23",
-            "-pix_fmt",
-            "yuv420p",
-            "-movflags",
-            "+faststart",
-            output_path,
-        ])
+        cmd.extend(output_command_plan.video_codec_args)
+        cmd.append(output_path)
         
         logger.debug("FFmpeg command: %s", " ".join(cmd))
 
-        return cmd, concat_path, temp_files
-
-    def _create_ass_subtitle_file(self, subtitles: List[Dict], video_width: int, video_height: int) -> Optional[str]:
-        """
-        Create an ASS subtitle file from subtitle clips.
-        Returns path to the created file.
-        """
-        if not subtitles:
-            return None
-        
-        # ASS header with styling (matching player preview style)
-        # Font size 56, white text, black outline (3px), centered at bottom
-        ass_header = f"""[Script Info]
-ScriptType: v4.00+
-PlayResX: {video_width}
-PlayResY: {video_height}
-WrapStyle: 0
-
-[V4+ Styles]
-Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
-Style: Default,Arial,56,&H00FFFFFF,&H000000FF,&H00000000,&H80000000,1,0,0,0,100,100,0,0,1,3,2,2,20,20,40,1
-
-[Events]
-Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
-"""
-        
-        events = []
-        for sub in subtitles:
-            start_time = sub.get("start_time", 0)
-            duration = sub.get("duration", 2)
-            text = sub.get("text_content", "").strip()
-            
-            if not text:
-                continue
-            
-            end_time = start_time + duration
-            
-            # Convert to ASS time format: H:MM:SS.CC
-            start_str = self._format_ass_time(start_time)
-            end_str = self._format_ass_time(end_time)
-            
-            # Escape special characters in ASS
-            text = text.replace("\\", "/").replace("{", "\\{").replace("}", "\\}")
-            text = text.replace("\n", "\\N")
-            
-            events.append(f"Dialogue: 0,{start_str},{end_str},Default,,0,0,0,,{text}")
-        
-        if not events:
-            return None
-        
-        # Write ASS file
-        ass_fd, ass_path = tempfile.mkstemp(suffix=".ass", prefix="subtitles_", text=True)
-        with os.fdopen(ass_fd, "w", encoding="utf-8") as f:
-            f.write(ass_header)
-            f.write("\n".join(events))
-        
-        return ass_path
-    
-    def _format_ass_time(self, seconds: float) -> str:
-        """Convert seconds to ASS time format H:MM:SS.CC"""
-        hours = int(seconds // 3600)
-        minutes = int((seconds % 3600) // 60)
-        secs = int(seconds % 60)
-        centisecs = int((seconds * 100) % 100)
-        return f"{hours}:{minutes:02d}:{secs:02d}.{centisecs:02d}"
+        return cmd, input_plan.concat_path, input_plan.temp_files
 
 # Global instance
 render_engine = RenderEngine()

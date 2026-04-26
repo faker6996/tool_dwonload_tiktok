@@ -1,5 +1,6 @@
 from PyQt6.QtCore import QThread, pyqtSignal
 from src.core.manager import DownloaderManager
+from src.core.media_validation import validate_media_file
 import os
 import tempfile
 
@@ -95,7 +96,12 @@ class DownloaderThread(QThread):
         chunk_size = 1024 * 1024
         os.makedirs(os.path.dirname(os.path.abspath(destination_path)) or ".", exist_ok=True)
 
-        with open(source_path, "rb") as src, open(destination_path, "wb") as dst:
+        validation = validate_media_file(source_path)
+        if not validation.ok:
+            return False
+
+        temp_destination = f"{destination_path}.part"
+        with open(source_path, "rb") as src, open(temp_destination, "wb") as dst:
             while True:
                 chunk = src.read(chunk_size)
                 if not chunk:
@@ -103,6 +109,14 @@ class DownloaderThread(QThread):
                 dst.write(chunk)
                 copied += len(chunk)
                 self._emit_progress(copied, total_size)
+        copied_validation = validate_media_file(temp_destination)
+        if not copied_validation.ok:
+            try:
+                os.remove(temp_destination)
+            except OSError:
+                pass
+            return False
+        os.replace(temp_destination, destination_path)
         self._emit_progress(total_size or copied, total_size or copied)
         return True
 

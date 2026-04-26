@@ -4,6 +4,7 @@ import os
 import glob
 import copy
 from ..logging_utils import get_logger
+from ..media_validation import validate_or_remove
 
 logger = get_logger(__name__)
 
@@ -127,16 +128,23 @@ class GenericDownloader(BaseDownloader):
         hooked_opts["progress_hooks"] = hooks
         return hooked_opts
 
-    def _finalize_downloaded_file(self, base_no_ext: str, output_path: str, preferred_ext: str = "", allow_any_extension: bool = False) -> bool:
+    def _finalize_downloaded_file(
+        self,
+        base_no_ext: str,
+        output_path: str,
+        preferred_ext: str = "",
+        allow_any_extension: bool = False,
+        expected_kind: str = "",
+    ) -> bool:
         if os.path.exists(output_path):
-            return True
+            return self._validate_final_file(output_path, expected_kind)
 
         if preferred_ext:
             preferred_path = f"{base_no_ext}{preferred_ext}"
             if os.path.exists(preferred_path):
                 if preferred_path != output_path:
                     os.replace(preferred_path, output_path)
-                return True
+                return self._validate_final_file(output_path, expected_kind)
 
         if not allow_any_extension:
             return False
@@ -146,8 +154,24 @@ class GenericDownloader(BaseDownloader):
             if os.path.isfile(candidate) and not candidate.endswith(".part"):
                 if candidate != output_path:
                     os.replace(candidate, output_path)
-                return os.path.exists(output_path)
+                return os.path.exists(output_path) and self._validate_final_file(
+                    output_path,
+                    expected_kind,
+                )
         return False
+
+    def _validate_final_file(self, output_path: str, expected_kind: str = "") -> bool:
+        validation = validate_or_remove(
+            output_path,
+            expected_kind=expected_kind or None,
+        )
+        if not validation.ok:
+            logger.warning(
+                "Downloaded media validation failed for %s: %s",
+                output_path,
+                validation.reason,
+            )
+        return validation.ok
 
     def download(self, video_url, filename, cookies=None, user_agent=None, progress_callback=None):
         if self.platform_name == "youtube":
@@ -197,7 +221,13 @@ class GenericDownloader(BaseDownloader):
                     run_opts = self._apply_progress_hook(ydl_opts, progress_callback=progress_callback)
                     with yt_dlp.YoutubeDL(run_opts) as ydl:
                         ydl.download([source_url])
-                    if self._finalize_downloaded_file(base_no_ext, output_path, preferred_ext=".mp4", allow_any_extension=True):
+                    if self._finalize_downloaded_file(
+                        base_no_ext,
+                        output_path,
+                        preferred_ext=".mp4",
+                        allow_any_extension=True,
+                        expected_kind="video",
+                    ):
                         if progress_callback:
                             try:
                                 final_size = os.path.getsize(output_path)
@@ -218,7 +248,13 @@ class GenericDownloader(BaseDownloader):
                     )
             if last_error:
                 raise last_error
-            return self._finalize_downloaded_file(base_no_ext, output_path, preferred_ext=".mp4", allow_any_extension=True)
+            return self._finalize_downloaded_file(
+                base_no_ext,
+                output_path,
+                preferred_ext=".mp4",
+                allow_any_extension=True,
+                expected_kind="video",
+            )
         except Exception as e:
             logger.warning("Video download failed for %s: %s", self.platform_name, e)
             return False
@@ -267,8 +303,10 @@ class GenericDownloader(BaseDownloader):
                     with yt_dlp.YoutubeDL(run_opts) as ydl:
                         ydl.download([source_url])
                     if os.path.exists(output_path) or os.path.exists(mp3_path):
+                        final_path = mp3_path if os.path.exists(mp3_path) else output_path
+                        if not self._validate_final_file(final_path, "audio"):
+                            continue
                         if progress_callback:
-                            final_path = mp3_path if os.path.exists(mp3_path) else output_path
                             try:
                                 final_size = os.path.getsize(final_path)
                             except OSError:
@@ -288,7 +326,8 @@ class GenericDownloader(BaseDownloader):
                     )
             if last_error:
                 raise last_error
-            return os.path.exists(output_path) or os.path.exists(mp3_path)
+            final_path = mp3_path if os.path.exists(mp3_path) else output_path
+            return os.path.exists(final_path) and self._validate_final_file(final_path, "audio")
         except Exception as e:
             logger.warning("Audio download failed for %s: %s", self.platform_name, e)
             return False
