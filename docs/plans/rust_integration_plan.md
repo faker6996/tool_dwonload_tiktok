@@ -157,6 +157,10 @@ Verification:
 
 ## Phase 4: Media Validation And IO
 
+Status:
+- Phase 4A completed: downloaded/imported media files are validated before final save or ingestion.
+- Phase 4B completed: shared atomic copy/replace and cache-key helpers are used by download, copy, and ingestion paths.
+
 Scope:
 - Validate output files after download:
   - container signatures
@@ -169,7 +173,32 @@ Acceptance criteria:
 - Bulk/import cannot save HTML as `.mp4`.
 - Download validation tests cover success, HTTP error pages, partial files, and unknown content-length.
 
+Completed in Phase 4A:
+- Added `src/core/media_validation.py` with size checks, HTML/error-page detection, image signature validation, invalid-file cleanup, and extension-based kind inference.
+- Updated direct URL downloads to validate temporary files before atomic replace.
+- Updated yt-dlp video/audio finalization to validate the final media file and remove invalid outputs.
+- Updated stock media downloads to validate `.part` files before atomic replace.
+- Updated media ingestion and preview-file copying to reject invalid imported/copied media before use.
+- Added tests for validation helpers, HTML/text-error rejection, and stock/download cleanup.
+
+Completed in Phase 4B:
+- Added `src/core/media_io.py` with temp-path creation, validated atomic replace, progress-aware atomic copy, best-effort proxy copy, quiet cleanup, and stable file cache hashing.
+- Updated direct URL downloads and stock downloads to use shared temp-path and validated atomic replace helpers.
+- Updated preview/source-file copy to use shared progress-aware atomic copy.
+- Updated thumbnail, waveform, proxy, and asset ID cache keys to use a shared path/mtime/size hash helper.
+- Added tests for atomic replace, invalid cleanup, progress copy, invalid source rejection, and cache hash stability.
+
+Verification:
+- `QT_QPA_PLATFORM=offscreen pytest -q tests/test_media_validation.py tests/test_base_downloader.py tests/test_stock_api.py tests/test_ingestion.py tests/test_audio_download_mode.py tests/test_youtube_video_flow.py`: 23 passed.
+- `QT_QPA_PLATFORM=offscreen pytest -q tests/test_media_io.py tests/test_media_validation.py tests/test_base_downloader.py tests/test_stock_api.py tests/test_ingestion.py tests/test_ingestion_proxy.py tests/test_youtube_video_flow.py`: 29 passed.
+- `cargo fmt --manifest-path rust/video_core/Cargo.toml --check`: passed.
+- `cargo test --manifest-path rust/video_core/Cargo.toml`: 15 passed.
+- `QT_QPA_PLATFORM=offscreen pytest -q`: 80 passed.
+
 ## Phase 5: Queue Core
+
+Status:
+- Phase 5A completed: task state-transition rules are isolated in a tested Python core module.
 
 Scope:
 - Move task claiming and state transitions into Rust.
@@ -179,6 +208,23 @@ Scope:
 Acceptance criteria:
 - Multi-worker race tests pass.
 - Running task cancellation semantics are explicit and tested.
+
+Completed in Phase 5A:
+- Added `src/core/queue_core.py` with `TaskType`, `TaskStatus`, `QueueTask`, allowed transition rules, progress clamping, pending-task claiming, pending cancellation, terminal cleanup, and status counting.
+- Updated `src/core/queue_manager.py` to re-export and consume the queue core instead of mutating task state ad hoc.
+- Changed task claiming so a pending task is marked `running` while still under the queue lock, preventing duplicate claims with multiple workers.
+- Added queue-core tests for claim uniqueness, invalid terminal transitions, pending-only cancellation, progress clamping, terminal cleanup, and status counts.
+- Added queue-manager tests for lazy startup, handler registration, synchronous claim semantics, cancel rules, and terminal cleanup.
+
+Pending in Phase 5B:
+- Add cooperative cancellation tokens for running tasks and propagate them through registered handlers.
+- Decide whether queue core should be ported to Rust after the Python transition contract stabilizes.
+
+Verification:
+- `QT_QPA_PLATFORM=offscreen pytest -q tests/test_queue_core.py tests/test_queue_manager.py`: 10 passed.
+- `cargo fmt --manifest-path rust/video_core/Cargo.toml --check`: passed.
+- `cargo test --manifest-path rust/video_core/Cargo.toml`: 15 passed.
+- `QT_QPA_PLATFORM=offscreen pytest -q`: 88 passed.
 
 ## Phase 6: Build And Packaging
 
@@ -204,6 +250,6 @@ Local build commands:
 
 ## Immediate Next Steps
 
-1. Start Phase 4 by adding media validation helpers for downloaded/imported files.
+1. Continue Phase 5B by adding cooperative cancellation tokens for running tasks.
 2. Add CI jobs for `cargo test`, Python tests, and `maturin build`.
 3. Add PyInstaller packaging checks for the native `video_core` extension.

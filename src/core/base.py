@@ -1,9 +1,9 @@
 from abc import ABC, abstractmethod
 import os
-import tempfile
 from typing import Callable, Dict, Optional
 from .logging_utils import get_logger
-from .media_validation import validate_media_file
+from .media_io import atomic_replace_validated, make_temp_path, remove_file_quietly
+from .media_validation import infer_media_kind
 
 logger = get_logger(__name__)
 
@@ -39,12 +39,7 @@ class BaseDownloader(ABC):
         destination_dir = os.path.dirname(os.path.abspath(filename)) or "."
         os.makedirs(destination_dir, exist_ok=True)
 
-        temp_fd, temp_path = tempfile.mkstemp(
-            prefix="download_",
-            suffix=".part",
-            dir=destination_dir,
-        )
-        os.close(temp_fd)
+        temp_path = make_temp_path(filename)
 
         try:
             headers = {}
@@ -87,20 +82,18 @@ class BaseDownloader(ABC):
                                 except Exception:
                                     pass
 
-            validation = validate_media_file(temp_path)
-            if not validation.ok:
-                logger.warning("Downloaded media validation failed: %s", validation.reason)
+            result = atomic_replace_validated(
+                temp_path,
+                filename,
+                expected_kind=infer_media_kind(filename),
+            )
+            if not result.ok:
+                logger.warning("Downloaded media validation failed: %s", result.reason)
                 return False
 
-            # Atomic replace avoids leaving partially-written destination files.
-            os.replace(temp_path, filename)
             if progress_callback:
                 try:
-                    final_size = os.path.getsize(filename)
-                except OSError:
-                    final_size = 0
-                try:
-                    progress_callback(final_size, final_size)
+                    progress_callback(result.size, result.size)
                 except Exception:
                     pass
             return True
@@ -114,8 +107,4 @@ class BaseDownloader(ABC):
             logger.exception("Download unexpected error: %s", e)
             return False
         finally:
-            if os.path.exists(temp_path):
-                try:
-                    os.remove(temp_path)
-                except OSError:
-                    pass
+            remove_file_quietly(temp_path)

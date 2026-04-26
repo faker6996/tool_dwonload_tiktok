@@ -145,6 +145,21 @@ class TestStockAPI(unittest.TestCase):
         self.assertEqual(result, "")
         self.assertFalse(os.path.exists(destination))
 
+    def test_download_media_rejects_html_error_file(self):
+        destination = os.path.join(self.temp_dir, "stock.mp4")
+        api = StockAPI()
+        response = MockResponse(
+            chunks=[b"<html>not found</html>"],
+            headers={"Content-Length": "22"},
+        )
+
+        with patch("src.core.api.stock_api.requests.get", return_value=response):
+            result = api.download_media("id_html", "https://cdn.example/error.mp4", destination)
+
+        self.assertEqual(result, "")
+        self.assertFalse(os.path.exists(destination))
+        self.assertFalse(os.path.exists(f"{destination}.part"))
+
 
 if __name__ == "__main__":
     unittest.main()

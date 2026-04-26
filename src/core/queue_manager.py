@@ -2,56 +2,23 @@
 Queue Manager - Background Task Processing System
 Handles download, translate, remove sub, and export tasks without blocking UI.
 """
-import uuid
 import time
-from dataclasses import dataclass, field
-from typing import Optional, List, Dict, Callable, Any
-from enum import Enum
+from typing import Optional, List, Dict, Callable
 from PyQt6.QtCore import QObject, QThread, pyqtSignal, QMutex, QWaitCondition
 from .logging_utils import get_logger
+from .queue_core import (
+    QueueTask,
+    TaskStatus,
+    TaskType,
+    cancel_pending_task,
+    claim_next_pending_task,
+    clear_terminal_tasks,
+    task_status_counts,
+    transition_task,
+    update_task_progress,
+)
 
 logger = get_logger(__name__)
-
-
-class TaskType(Enum):
-    DOWNLOAD = "download"
-    TRANSLATE = "translate"
-    REMOVE_SUB = "remove_sub"
-    EXPORT = "export"
-    TRANSCODE = "transcode"
-    OCR_EXTRACT = "ocr_extract"
-    TRANSCRIBE = "transcribe"
-
-
-class TaskStatus(Enum):
-    PENDING = "pending"
-    RUNNING = "running"
-    COMPLETED = "completed"
-    FAILED = "failed"
-    CANCELLED = "cancelled"
-
-
-@dataclass
-class QueueTask:
-    """Represents a single task in the queue."""
-    id: str = field(default_factory=lambda: str(uuid.uuid4())[:8])
-    task_type: TaskType = TaskType.DOWNLOAD
-    status: TaskStatus = TaskStatus.PENDING
-    progress: int = 0
-    title: str = ""
-    data: Dict[str, Any] = field(default_factory=dict)
-    error: Optional[str] = None
-    created_at: float = field(default_factory=time.time)
-    
-    def to_dict(self) -> dict:
-        return {
-            "id": self.id,
-            "type": self.task_type.value,
-            "status": self.status.value,
-            "progress": self.progress,
-            "title": self.title,
-            "error": self.error
-        }
 
 
 class QueueWorker(QThread):
@@ -110,7 +77,6 @@ class QueueWorker(QThread):
     
     def _process_task(self, task: QueueTask):
         """Process a single task."""
-        task.status = TaskStatus.RUNNING
         self.task_started.emit(task.id)
         
         handler = self._handlers.get(task.task_type)
@@ -122,26 +88,24 @@ class QueueWorker(QThread):
         if handler is None:
             # Handler may be registered shortly after task enqueue.
             # Put task back to pending instead of failing immediately.
-            task.status = TaskStatus.PENDING
+            transition_task(task, TaskStatus.PENDING)
             time.sleep(0.1)
             return
         
         try:
             # Define progress callback
             def progress_callback(progress: int):
-                task.progress = progress
+                update_task_progress(task, progress)
                 self.task_progress.emit(task.id, progress)
             
             # Run the handler
             handler(task.data, progress_callback)
             
-            task.status = TaskStatus.COMPLETED
-            task.progress = 100
+            transition_task(task, TaskStatus.COMPLETED)
             self.task_completed.emit(task.id)
             
         except Exception as e:
-            task.status = TaskStatus.FAILED
-            task.error = str(e)
+            transition_task(task, TaskStatus.FAILED, error=str(e))
             self.task_failed.emit(task.id, str(e))
 
 
@@ -216,12 +180,9 @@ class QueueManager(QObject):
     def get_next_pending_task(self) -> Optional[QueueTask]:
         """Get the next pending task from the queue."""
         self._mutex.lock()
-        for task in self._tasks:
-            if task.status == TaskStatus.PENDING:
-                self._mutex.unlock()
-                return task
+        task = claim_next_pending_task(self._tasks)
         self._mutex.unlock()
-        return None
+        return task
     
     def get_task(self, task_id: str) -> Optional[QueueTask]:
         """Get a task by ID."""
@@ -237,8 +198,7 @@ class QueueManager(QObject):
     def cancel_task(self, task_id: str) -> bool:
         """Cancel a pending task."""
         task = self.get_task(task_id)
-        if task and task.status == TaskStatus.PENDING:
-            task.status = TaskStatus.CANCELLED
+        if task and cancel_pending_task(task):
             self.task_updated.emit(task)
             return True
         return False
@@ -253,8 +213,7 @@ class QueueManager(QObject):
     def clear_completed(self):
         """Clear all completed/failed/cancelled tasks."""
         self._mutex.lock()
-        self._tasks = [t for t in self._tasks if t.status in 
-                       [TaskStatus.PENDING, TaskStatus.RUNNING]]
+        self._tasks = clear_terminal_tasks(self._tasks)
         self._mutex.unlock()
         self.queue_cleared.emit()
     
@@ -277,18 +236,7 @@ class QueueManager(QObject):
     
     def get_stats(self) -> dict:
         """Get queue statistics."""
-        pending = sum(1 for t in self._tasks if t.status == TaskStatus.PENDING)
-        running = sum(1 for t in self._tasks if t.status == TaskStatus.RUNNING)
-        completed = sum(1 for t in self._tasks if t.status == TaskStatus.COMPLETED)
-        failed = sum(1 for t in self._tasks if t.status == TaskStatus.FAILED)
-        
-        return {
-            "total": len(self._tasks),
-            "pending": pending,
-            "running": running,
-            "completed": completed,
-            "failed": failed
-        }
+        return task_status_counts(self._tasks)
     
     def _on_task_started(self, task_id: str):
         task = self.get_task(task_id)

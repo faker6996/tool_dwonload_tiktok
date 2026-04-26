@@ -16,9 +16,10 @@ class _DummyDownloader(BaseDownloader):
 
 
 class _MockResponse:
-    def __init__(self, status_code=200, chunks=None):
+    def __init__(self, status_code=200, chunks=None, headers=None):
         self.status_code = status_code
         self._chunks = chunks or [b"chunk-1", b"chunk-2"]
+        self.headers = headers or {}
 
     def iter_content(self, chunk_size=8192):
         return iter(self._chunks)
@@ -62,6 +63,32 @@ class TestBaseDownloader(unittest.TestCase):
     @patch("requests.get", side_effect=OSError("network error"))
     def test_download_exception_returns_false(self, mock_get):
         result = self.downloader.download("https://example.com/video.mp4", self.output_path)
+        self.assertFalse(result)
+        self.assertFalse(os.path.exists(self.output_path))
+
+    @patch("requests.get")
+    def test_download_rejects_html_error_file(self, mock_get):
+        mock_get.return_value = _MockResponse(
+            status_code=200,
+            chunks=[b"<!doctype html><html>Forbidden</html>"],
+            headers={"content-length": "39"},
+        )
+
+        result = self.downloader.download("https://example.com/video.mp4", self.output_path)
+
+        self.assertFalse(result)
+        self.assertFalse(os.path.exists(self.output_path))
+
+    @patch("requests.get")
+    def test_download_rejects_text_error_file(self, mock_get):
+        mock_get.return_value = _MockResponse(
+            status_code=200,
+            chunks=[b"ERROR: forbidden access denied"],
+            headers={"content-length": "30"},
+        )
+
+        result = self.downloader.download("https://example.com/video.mp4", self.output_path)
+
         self.assertFalse(result)
         self.assertFalse(os.path.exists(self.output_path))
 

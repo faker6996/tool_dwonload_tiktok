@@ -1,10 +1,9 @@
 import subprocess
 import json
 import os
-import hashlib
-import shutil
 from typing import Dict, Optional
 from .logging_utils import get_logger
+from .media_io import copy_file_best_effort, remove_file_quietly, stable_file_hash
 from .media_validation import validate_media_file
 
 logger = get_logger(__name__)
@@ -79,7 +78,7 @@ class MediaIngestion:
         # proxy_path = self.generate_proxy(file_path)
         
         return {
-            "id": str(hashlib.md5(file_path.encode()).hexdigest()), # Simple ID generation
+            "id": stable_file_hash(file_path), # Simple ID generation
             "name": os.path.basename(file_path),
             "target_url": file_path,
             "metadata": {
@@ -98,7 +97,7 @@ class MediaIngestion:
         """
         Generate a thumbnail using ffmpeg with fast seeking.
         """
-        file_hash = hashlib.md5(f"{file_path}_{os.path.getmtime(file_path)}".encode()).hexdigest()
+        file_hash = stable_file_hash(file_path)
         thumbnail_path = os.path.join(self.cache_dir, f"thumb_{file_hash}.jpg")
         
         if os.path.exists(thumbnail_path):
@@ -127,7 +126,7 @@ class MediaIngestion:
         Generate a waveform image using ffmpeg.
         Returns path to the waveform PNG.
         """
-        file_hash = hashlib.md5(f"{file_path}_{os.path.getmtime(file_path)}".encode()).hexdigest()
+        file_hash = stable_file_hash(file_path)
         waveform_path = os.path.join(self.cache_dir, f"wave_{file_hash}.png")
         
         if os.path.exists(waveform_path):
@@ -157,13 +156,7 @@ class MediaIngestion:
         cache_dir = os.path.join(self.cache_dir, "proxies")
         os.makedirs(cache_dir, exist_ok=True)
 
-        try:
-            stat = os.stat(file_path)
-            cache_key = f"{file_path}:{stat.st_mtime}:{stat.st_size}"
-        except OSError:
-            cache_key = file_path
-
-        file_hash = hashlib.md5(cache_key.encode()).hexdigest()
+        file_hash = stable_file_hash(file_path)
         output_path = os.path.join(cache_dir, f"{file_hash}_proxy.mp4")
 
         if os.path.exists(output_path) and os.path.getsize(output_path) > 0:
@@ -203,14 +196,11 @@ class MediaIngestion:
             return output_path
         except (subprocess.CalledProcessError, FileNotFoundError) as e:
             logger.warning("FFmpeg proxy generation failed for %s: %s", file_path, e)
-            if os.path.exists(temp_output):
-                try:
-                    os.remove(temp_output)
-                except OSError:
-                    pass
+            remove_file_quietly(temp_output)
 
         try:
-            shutil.copy2(file_path, output_path)
+            if not copy_file_best_effort(file_path, output_path):
+                raise OSError("copy failed")
             logger.warning("Using copied source as proxy fallback: %s", output_path)
         except OSError as e:
             logger.warning("Proxy fallback copy failed for %s: %s", file_path, e)

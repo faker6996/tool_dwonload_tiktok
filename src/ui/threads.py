@@ -1,6 +1,6 @@
 from PyQt6.QtCore import QThread, pyqtSignal
 from src.core.manager import DownloaderManager
-from src.core.media_validation import validate_media_file
+from src.core.media_io import copy_file_atomic
 import os
 import tempfile
 
@@ -86,39 +86,12 @@ class DownloaderThread(QThread):
         self.progress.emit(downloaded_value, total_value)
 
     def _copy_with_progress(self, source_path: str, destination_path: str) -> bool:
-        total_size = 0
-        try:
-            total_size = os.path.getsize(source_path)
-        except OSError:
-            total_size = 0
-
-        copied = 0
-        chunk_size = 1024 * 1024
-        os.makedirs(os.path.dirname(os.path.abspath(destination_path)) or ".", exist_ok=True)
-
-        validation = validate_media_file(source_path)
-        if not validation.ok:
-            return False
-
-        temp_destination = f"{destination_path}.part"
-        with open(source_path, "rb") as src, open(temp_destination, "wb") as dst:
-            while True:
-                chunk = src.read(chunk_size)
-                if not chunk:
-                    break
-                dst.write(chunk)
-                copied += len(chunk)
-                self._emit_progress(copied, total_size)
-        copied_validation = validate_media_file(temp_destination)
-        if not copied_validation.ok:
-            try:
-                os.remove(temp_destination)
-            except OSError:
-                pass
-            return False
-        os.replace(temp_destination, destination_path)
-        self._emit_progress(total_size or copied, total_size or copied)
-        return True
+        result = copy_file_atomic(
+            source_path,
+            destination_path,
+            progress_callback=self._emit_progress,
+        )
+        return result.ok
 
     def run(self):
         self._emit_progress(0, 0)

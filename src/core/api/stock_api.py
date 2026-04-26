@@ -2,7 +2,7 @@ import requests
 import os
 from typing import List, Dict, Optional, Callable
 from ..logging_utils import get_logger
-from ..media_validation import validate_media_file
+from ..media_io import atomic_replace_validated, make_temp_path, remove_file_quietly
 
 logger = get_logger(__name__)
 
@@ -122,7 +122,7 @@ class StockAPI:
         if destination_dir:
             os.makedirs(destination_dir, exist_ok=True)
 
-        temp_destination = f"{destination}.part"
+        temp_destination = make_temp_path(destination)
         try:
             with requests.get(url, stream=True, timeout=60) as response:
                 response.raise_for_status()
@@ -144,19 +144,18 @@ class StockAPI:
                 if progress_callback:
                     progress_callback(bytes_written, total_bytes)
 
-            validation = validate_media_file(temp_destination, expected_kind="video")
-            if not validation.ok:
-                raise RuntimeError(f"Downloaded media validation failed: {validation.reason}")
+            result = atomic_replace_validated(
+                temp_destination,
+                destination,
+                expected_kind="video",
+            )
+            if not result.ok:
+                raise RuntimeError(f"Downloaded media validation failed: {result.reason}")
 
-            os.replace(temp_destination, destination)
             return destination
         except Exception as e:
             logger.warning("Stock media download failed for %s: %s", media_id, e)
-            if os.path.exists(temp_destination):
-                try:
-                    os.remove(temp_destination)
-                except OSError:
-                    pass
+            remove_file_quietly(temp_destination)
             return ""
 
 # Global instance

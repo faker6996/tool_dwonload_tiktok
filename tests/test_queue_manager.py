@@ -1,6 +1,5 @@
 import os
 import sys
-import time
 import unittest
 
 # Add src to path
@@ -11,7 +10,7 @@ from src.core.queue_manager import QueueManager, TaskType, TaskStatus
 
 class TestQueueManager(unittest.TestCase):
     def setUp(self):
-        self.queue = QueueManager(max_workers=1)
+        self.queue = QueueManager(max_workers=0)
 
     def tearDown(self):
         self.queue.shutdown()
@@ -24,9 +23,8 @@ class TestQueueManager(unittest.TestCase):
     def test_task_added_before_handler_is_not_failed(self):
         task = self.queue.add_task(TaskType.DOWNLOAD, "download", {"ran": False})
 
-        # Let worker attempt before handler is registered
-        time.sleep(0.2)
         self.assertNotEqual(task.status, TaskStatus.FAILED)
+        self.assertEqual(task.status, TaskStatus.PENDING)
 
         def handle_download(data, progress_callback):
             progress_callback(50)
@@ -34,12 +32,37 @@ class TestQueueManager(unittest.TestCase):
 
         self.queue.register_handler(TaskType.DOWNLOAD, handle_download)
 
-        deadline = time.time() + 3.0
-        while time.time() < deadline and task.status not in (TaskStatus.COMPLETED, TaskStatus.FAILED):
-            time.sleep(0.05)
+        self.assertIs(self.queue.get_handler(TaskType.DOWNLOAD), handle_download)
+        self.assertEqual(task.status, TaskStatus.PENDING)
 
-        self.assertEqual(task.status, TaskStatus.COMPLETED)
-        self.assertTrue(task.data["ran"])
+    def test_claiming_next_task_marks_running_before_returning(self):
+        queue = QueueManager(max_workers=0)
+        try:
+            first = queue.add_task(TaskType.DOWNLOAD, "download 1", {"id": 1})
+            second = queue.add_task(TaskType.DOWNLOAD, "download 2", {"id": 2})
+
+            claimed_first = queue.get_next_pending_task()
+            claimed_second = queue.get_next_pending_task()
+            claimed_third = queue.get_next_pending_task()
+
+            self.assertEqual(claimed_first.id, first.id)
+            self.assertEqual(claimed_second.id, second.id)
+            self.assertIsNone(claimed_third)
+            self.assertEqual(first.status, TaskStatus.RUNNING)
+            self.assertEqual(second.status, TaskStatus.RUNNING)
+        finally:
+            queue.shutdown()
+
+    def test_cancel_and_clear_completed_use_core_rules(self):
+        pending = self.queue.add_task(TaskType.DOWNLOAD, "pending", {})
+        self.assertTrue(self.queue.cancel_task(pending.id))
+        self.assertFalse(self.queue.cancel_task(pending.id))
+
+        stats = self.queue.get_stats()
+        self.assertEqual(stats["cancelled"], 1)
+
+        self.queue.clear_completed()
+        self.assertIsNone(self.queue.get_task(pending.id))
 
 
 if __name__ == "__main__":

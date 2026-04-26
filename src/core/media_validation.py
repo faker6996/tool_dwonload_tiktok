@@ -63,15 +63,26 @@ def validate_media_file(
         return MediaValidationResult(False, "file is empty or unreadable", size)
 
     extension = os.path.splitext(path)[1].lower()
-    if extension in MEDIA_EXTENSIONS and _looks_like_html(head):
+    if _looks_like_html(head):
         return MediaValidationResult(False, "downloaded content looks like HTML", size)
-    if extension in MEDIA_EXTENSIONS and _looks_like_text_error(head):
+    if (extension in MEDIA_EXTENSIONS or expected_kind in {"audio", "video", "media"}) and _looks_like_text_error(head):
         return MediaValidationResult(False, "downloaded content looks like a text error page", size)
 
     if expected_kind == "image" and not _looks_like_image(head):
         return MediaValidationResult(False, "file does not look like an image", size)
 
     return MediaValidationResult(True, "", size)
+
+
+def infer_media_kind(path: str) -> Optional[str]:
+    extension = os.path.splitext(path)[1].lower()
+    if extension in {".mp4", ".mov", ".avi", ".mkv"}:
+        return "video"
+    if extension in {".mp3", ".wav", ".m4a", ".aac"}:
+        return "audio"
+    if extension in {".png", ".jpg", ".jpeg"}:
+        return "image"
+    return None
 
 
 def validate_or_remove(
