@@ -5,6 +5,7 @@ import glob
 import copy
 from ..logging_utils import get_logger
 from ..media_validation import validate_or_remove
+from ..profiling import profile_scope
 
 logger = get_logger(__name__)
 
@@ -37,8 +38,13 @@ class GenericDownloader(BaseDownloader):
             for attempt_name, ydl_opts in attempts:
                 try:
                     _notify(f"Requesting video metadata ({attempt_name})...")
-                    with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-                        info = ydl.extract_info(url, download=False)
+                    with profile_scope(
+                        "download.extract_info_attempt",
+                        platform=self.platform_name,
+                        attempt=attempt_name,
+                    ):
+                        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                            info = ydl.extract_info(url, download=False)
                     video_url = (info or {}).get('url')
                     title = (info or {}).get('title', 'Unknown')
                     if video_url:
@@ -219,8 +225,13 @@ class GenericDownloader(BaseDownloader):
             for attempt_name, ydl_opts in attempts:
                 try:
                     run_opts = self._apply_progress_hook(ydl_opts, progress_callback=progress_callback)
-                    with yt_dlp.YoutubeDL(run_opts) as ydl:
-                        ydl.download([source_url])
+                    with profile_scope(
+                        "download.video_attempt",
+                        platform=self.platform_name,
+                        attempt=attempt_name,
+                    ):
+                        with yt_dlp.YoutubeDL(run_opts) as ydl:
+                            ydl.download([source_url])
                     if self._finalize_downloaded_file(
                         base_no_ext,
                         output_path,
@@ -300,8 +311,13 @@ class GenericDownloader(BaseDownloader):
             for attempt_name, ydl_opts in attempts:
                 try:
                     run_opts = self._apply_progress_hook(ydl_opts, progress_callback=progress_callback)
-                    with yt_dlp.YoutubeDL(run_opts) as ydl:
-                        ydl.download([source_url])
+                    with profile_scope(
+                        "download.audio_attempt",
+                        platform=self.platform_name,
+                        attempt=attempt_name,
+                    ):
+                        with yt_dlp.YoutubeDL(run_opts) as ydl:
+                            ydl.download([source_url])
                     if os.path.exists(output_path) or os.path.exists(mp3_path):
                         final_path = mp3_path if os.path.exists(mp3_path) else output_path
                         if not self._validate_final_file(final_path, "audio"):

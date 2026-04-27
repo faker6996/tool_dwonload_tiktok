@@ -177,7 +177,7 @@ class Timeline(QFrame):
             return
         self._transcription_handler_registered = True
         
-        def handle_transcription(data, progress_callback):
+        def handle_transcription(data, progress_callback, cancellation_token=None):
             from src.core.ai.transcription import transcription_service
             
             video_path = data["video_path"]
@@ -186,6 +186,8 @@ class Timeline(QFrame):
             timeline_ref = data.get("timeline_ref")
             
             progress_callback(10)
+            if cancellation_token and cancellation_token.is_cancelled():
+                return
             
             # Run transcription - use different method based on translate_to
             if translate_to:
@@ -198,6 +200,8 @@ class Timeline(QFrame):
                     video_path,
                     language=language
                 )
+            if cancellation_token and cancellation_token.is_cancelled():
+                return
             
             progress_callback(90)
             
@@ -224,7 +228,7 @@ class Timeline(QFrame):
             return
         self._ocr_handler_registered = True
         
-        def handle_ocr_extract(data, progress_callback):
+        def handle_ocr_extract(data, progress_callback, cancellation_token=None):
             from src.core.ai.ocr_subtitle import ocr_subtitle_extractor
             
             video_path = data["video_path"]
@@ -233,6 +237,8 @@ class Timeline(QFrame):
             timeline_ref = data.get("timeline_ref")
             
             progress_callback(10)
+            if cancellation_token and cancellation_token.is_cancelled():
+                return
             
             # Run OCR extraction
             segments = ocr_subtitle_extractor.extract_subtitles(
@@ -241,6 +247,8 @@ class Timeline(QFrame):
                 fps_sample=1.0,
                 translate=True
             )
+            if cancellation_token and cancellation_token.is_cancelled():
+                return
             
             progress_callback(80)
             
@@ -602,7 +610,7 @@ class Timeline(QFrame):
         """Register TTS handler with queue manager."""
         from src.core.queue_manager import queue_manager, TaskType
         
-        def handle_tts(data: dict, progress_callback):
+        def handle_tts(data: dict, progress_callback, cancellation_token=None):
             from src.core.ai.tts import tts_service
             
             text = data["text"]
@@ -610,9 +618,13 @@ class Timeline(QFrame):
             output_path = data["output_path"]
             
             progress_callback(20)
+            if cancellation_token and cancellation_token.is_cancelled():
+                return
             
             # Generate TTS
             tts_service.generate_speech(text, output_path, voice=voice)
+            if cancellation_token and cancellation_token.is_cancelled():
+                return
             
             progress_callback(80)
             
@@ -824,7 +836,7 @@ class Timeline(QFrame):
         """Register subtitle removal handler with queue manager."""
         from src.core.queue_manager import queue_manager, TaskType
         
-        def handle_remove_sub(data: dict, progress_callback):
+        def handle_remove_sub(data: dict, progress_callback, cancellation_token=None):
             from src.core.ai.subtitle_remover import subtitle_remover_service
             
             input_path = data["input_path"]
@@ -835,6 +847,8 @@ class Timeline(QFrame):
             bottom_percent = settings.get("bottom_percent", 0.15)
             
             progress_callback(10)
+            if cancellation_token and cancellation_token.is_cancelled():
+                return
             
             if algorithm == "inpaint":
                 progress_callback(20)
@@ -845,11 +859,15 @@ class Timeline(QFrame):
                 )
             else:
                 progress_callback(30)
+                if cancellation_token and cancellation_token.is_cancelled():
+                    return
                 success = subtitle_remover_service.remove_subtitles_ffmpeg(
                     input_path, output_path,
                     bottom_percent=bottom_percent,
                     method=algorithm
                 )
+            if cancellation_token and cancellation_token.is_cancelled():
+                return
             
             if not success:
                 raise Exception("Failed to process video")

@@ -5,7 +5,12 @@ import unittest
 # Add src to path
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
-from src.core.queue_manager import QueueManager, TaskType, TaskStatus
+from src.core.queue_manager import (
+    QueueManager,
+    TaskType,
+    TaskStatus,
+    _handler_accepts_cancellation_token,
+)
 
 
 class TestQueueManager(unittest.TestCase):
@@ -63,6 +68,29 @@ class TestQueueManager(unittest.TestCase):
 
         self.queue.clear_completed()
         self.assertIsNone(self.queue.get_task(pending.id))
+
+    def test_cancel_running_task_requests_token(self):
+        task = self.queue.add_task(TaskType.DOWNLOAD, "running", {})
+        claimed = self.queue.get_next_pending_task()
+
+        self.assertIs(claimed, task)
+        self.assertTrue(self.queue.cancel_task(task.id))
+        self.assertEqual(task.status, TaskStatus.CANCELLED)
+        self.assertTrue(task.cancellation_token.is_cancelled())
+
+    def test_handler_signature_detection_supports_optional_token(self):
+        def old_handler(data, progress_callback):
+            return None
+
+        def new_handler(data, progress_callback, cancellation_token):
+            return None
+
+        def vararg_handler(*args):
+            return None
+
+        self.assertFalse(_handler_accepts_cancellation_token(old_handler))
+        self.assertTrue(_handler_accepts_cancellation_token(new_handler))
+        self.assertTrue(_handler_accepts_cancellation_token(vararg_handler))
 
 
 if __name__ == "__main__":

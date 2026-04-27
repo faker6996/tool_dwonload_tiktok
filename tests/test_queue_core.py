@@ -4,6 +4,7 @@ import unittest
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
+import src.core.queue_core as queue_core
 from src.core.queue_core import (
     QueueTask,
     TaskStatus,
@@ -12,6 +13,7 @@ from src.core.queue_core import (
     claim_next_pending_task,
     clear_terminal_tasks,
     clamp_progress,
+    request_task_cancellation,
     task_status_counts,
     transition_task,
     update_task_progress,
@@ -51,6 +53,23 @@ class TestQueueCore(unittest.TestCase):
         self.assertFalse(cancel_pending_task(running))
         self.assertEqual(pending.status, TaskStatus.CANCELLED)
         self.assertEqual(running.status, TaskStatus.RUNNING)
+
+    def test_running_cancellation_sets_token_and_status(self):
+        task = QueueTask(status=TaskStatus.RUNNING)
+
+        changed = request_task_cancellation(task, "user cancelled")
+
+        self.assertTrue(changed)
+        self.assertEqual(task.status, TaskStatus.CANCELLED)
+        self.assertTrue(task.cancellation_token.is_cancelled())
+        self.assertEqual(task.cancellation_token.reason, "user cancelled")
+        self.assertEqual(task.error, "user cancelled")
+
+    def test_cancel_requested_is_serialized(self):
+        task = QueueTask(status=TaskStatus.PENDING)
+        request_task_cancellation(task)
+
+        self.assertTrue(task.to_dict()["cancelRequested"])
 
     def test_progress_updates_only_running_and_clamps(self):
         running = QueueTask(status=TaskStatus.RUNNING)
@@ -93,6 +112,71 @@ class TestQueueCore(unittest.TestCase):
                 "cancelled": 1,
             },
         )
+
+    def test_native_queue_core_result_is_applied_when_available(self):
+        original_native = queue_core._video_core
+
+        class FakeNativeQueueCore:
+            def queue_transition_json(
+                self,
+                current_status,
+                current_progress,
+                current_error,
+                target_status,
+                progress=None,
+                error=None,
+            ):
+                self.last_transition = (
+                    current_status,
+                    current_progress,
+                    current_error,
+                    target_status,
+                    progress,
+                    error,
+                )
+                return (
+                    '{"ok": true, "status": "running", '
+                    '"progress": 42, "error": null}'
+                )
+
+            def queue_request_cancellation_json(
+                self,
+                current_status,
+                current_progress,
+                current_error,
+                reason="cancelled",
+            ):
+                return (
+                    '{"ok": true, "status": "cancelled", "progress": 42, '
+                    '"error": "stop", "cancel_requested": true, "cancel_reason": "stop"}'
+                )
+
+            def queue_status_counts_json(self, statuses_json):
+                return (
+                    '{"total": 2, "pending": 1, "running": 1, '
+                    '"completed": 0, "failed": 0, "cancelled": 0}'
+                )
+
+            def queue_clamp_progress(self, progress):
+                return 42
+
+            def queue_can_transition(self, current_status, target_status):
+                return True
+
+        try:
+            fake_native = FakeNativeQueueCore()
+            queue_core._video_core = fake_native
+            task = QueueTask(status=TaskStatus.PENDING)
+
+            self.assertTrue(transition_task(task, TaskStatus.RUNNING, progress=7))
+            self.assertEqual(task.status, TaskStatus.RUNNING)
+            self.assertEqual(task.progress, 42)
+            self.assertTrue(request_task_cancellation(task, "stop"))
+            self.assertTrue(task.cancellation_token.is_cancelled())
+            self.assertEqual(task.error, "stop")
+            self.assertEqual(task_status_counts([QueueTask(), QueueTask(status=TaskStatus.RUNNING)])["running"], 1)
+        finally:
+            queue_core._video_core = original_native
 
 
 if __name__ == "__main__":

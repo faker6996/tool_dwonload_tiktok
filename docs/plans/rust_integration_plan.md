@@ -10,10 +10,11 @@ Keep Python/PyQt responsible for UI, downloads, AI orchestration, and FFmpeg pro
 | --- | --- | --- | --- |
 | Phase 1 | Completed | Rust crate + Python boundary skeleton | `rust/video_core` exists with PyO3-compatible API and Rust tests. |
 | Phase 2 | Completed | Timeline core | Rust core is split into clean modules and `MagneticTrack` delegates through an optional Python adapter when `video_core` is installed. |
-| Phase 3 | Partially completed | Export planner | Rust `ExportPlan` now validates clips, overlay inputs, gaps, speed, fps, resolution, and filter/output command requirements before Python builds FFmpeg commands. |
-| Phase 4 | Not started | Media validation + IO | Validate downloaded media, atomic copy/move, cache keys, file scanning. |
-| Phase 5 | Not started | Queue core | Safer task state machine, cancellation, progress contracts. |
-| Phase 6 | Partially completed | Build and packaging | Local `maturin build` path works. CI and PyInstaller bundling are still pending. |
+| Phase 3 | Completed | Export planner | Rust `ExportPlan` validates clips, overlay inputs, gaps, speed, fps, resolution, and filter/output command requirements before Python builds FFmpeg commands. |
+| Phase 4 | Completed | Media validation + IO | Download/import validation, atomic copy/replace, and cache keys are covered by shared helpers and tests. |
+| Phase 5 | Partially completed | Queue core | Deterministic queue state decisions are in Rust; long-running Qt worker cancellation integration tests are still deferred. |
+| Phase 6 | Completed | Build and packaging | CI, local scripts, PyInstaller spec, and packaged smoke checks now include the native Rust extension. |
+| Phase 7 | Partially completed | Profiling and hotspot selection | Lightweight profiling is available for download, ingestion, export, and queue task paths before choosing the next Rust target. |
 
 ## Design Rules
 
@@ -199,6 +200,8 @@ Verification:
 
 Status:
 - Phase 5A completed: task state-transition rules are isolated in a tested Python core module.
+- Phase 5B completed: running tasks support cooperative cancellation tokens and compatible handler propagation.
+- Phase 5C completed: deterministic queue state decisions are ported to Rust with Python fallback.
 
 Scope:
 - Move task claiming and state transitions into Rust.
@@ -216,22 +219,42 @@ Completed in Phase 5A:
 - Added queue-core tests for claim uniqueness, invalid terminal transitions, pending-only cancellation, progress clamping, terminal cleanup, and status counts.
 - Added queue-manager tests for lazy startup, handler registration, synchronous claim semantics, cancel rules, and terminal cleanup.
 
-Pending in Phase 5B:
-- Add cooperative cancellation tokens for running tasks and propagate them through registered handlers.
-- Decide whether queue core should be ported to Rust after the Python transition contract stabilizes.
+Completed in Phase 5B:
+- Added `CancellationToken` to `QueueTask` and serialized `cancelRequested` into task dictionaries.
+- Added `request_task_cancellation()` so pending tasks cancel immediately and running tasks receive a cancellation token with a reason.
+- Updated `QueueManager.cancel_task()` to request cooperative cancellation for running tasks instead of only handling pending tasks.
+- Updated `QueueWorker` to pass cancellation tokens to handlers that accept a third positional argument while keeping old two-argument handlers compatible.
+- Updated transcription, OCR, TTS, and subtitle-removal queue handlers to accept and check cancellation tokens at safe checkpoints.
+- Added tests for running cancellation, token serialization, cancel request propagation, and handler signature compatibility.
+
+Completed in Phase 5C:
+- Ported queue progress clamping, transition validation, cancellation decisions, and status counts to `rust/video_core/src/core/queue.rs`.
+- Exposed queue core decisions through PyO3 functions in `video_core`.
+- Updated `src/core/queue_core.py` to use native Rust queue decisions when available and fall back to Python logic otherwise.
+- Kept PyQt worker/thread orchestration in Python; only deterministic state decisions moved to Rust.
+- Added Rust queue tests and Python native-adapter coverage for applying native transition/cancellation/count results.
+
+Pending after Phase 5:
+- Add integration coverage for long-running worker cancellation once queue tests can safely run Qt worker threads in CI.
 
 Verification:
 - `QT_QPA_PLATFORM=offscreen pytest -q tests/test_queue_core.py tests/test_queue_manager.py`: 10 passed.
+- `QT_QPA_PLATFORM=offscreen pytest -q tests/test_queue_core.py tests/test_queue_manager.py`: 14 passed.
 - `cargo fmt --manifest-path rust/video_core/Cargo.toml --check`: passed.
-- `cargo test --manifest-path rust/video_core/Cargo.toml`: 15 passed.
-- `QT_QPA_PLATFORM=offscreen pytest -q`: 88 passed.
+- `cargo test --manifest-path rust/video_core/Cargo.toml`: 20 passed.
+- `python -m maturin build --manifest-path rust/video_core/Cargo.toml --features extension-module --out rust/video_core/dist`: passed.
+- `python -m pip install --force-reinstall rust/video_core/dist/video_core-0.1.0-cp311-cp311-macosx_11_0_arm64.whl`: passed.
+- Native `video_core.queue_transition_json` smoke test: passed.
+- `QT_QPA_PLATFORM=offscreen pytest -q`: 93 passed.
 
 ## Phase 6: Build And Packaging
 
 Status:
 - Local build path completed.
 - `maturin` added to Python requirements.
-- CI wheel builds and PyInstaller native-extension bundling remain pending.
+- Phase 6A completed: CI now builds/tests Rust and Python, builds the native wheel, and smoke-tests `video_core`.
+- Phase 6B completed: PyInstaller build paths include `video_core` and run packaged smoke checks.
+- Phase 6C completed: local spec/script packaging paths are aligned with CI smoke checks.
 
 Scope:
 - Add `maturin` build path.
@@ -244,12 +267,110 @@ Acceptance criteria:
 - CI builds Rust extension and PyInstaller artifact.
 - Packaged app can import and use `video_core`.
 
+Completed in Phase 6A:
+- Added `test-native-core` GitHub Actions job for Rust format check, Rust tests, `maturin build`, native extension install, native smoke, and Python tests.
+- Added `--smoke-native-core` CLI path in `main.py` that imports `video_core` and validates a queue transition without starting PyQt.
+
+Completed in Phase 6B:
+- Updated macOS, Linux, and Windows build jobs to install Rust, build/install the native extension before PyInstaller, include `video_core` as a hidden import, and run packaged smoke checks.
+- Updated local macOS and Windows build scripts to build/install the native extension and smoke-test both Python and packaged app paths.
+- Updated `VideoDownloader.spec` to include `video_core` as a hidden import.
+
+Completed in Phase 6C:
+- Added `scripts/smoke_package.py` as the shared packaged-app smoke check for CI and local builds.
+- Updated CI packaged smoke steps and local macOS/Windows scripts to call the shared smoke script instead of hardcoding separate command behavior.
+- Reconciled `VideoDownloader.spec` with the current `VideoEditor` app name, assets, optional bundled FFmpeg binary, PyInstaller hidden imports, and native `video_core` packaging.
+- Reviewed release packaging: current release job only uploads already-smoked artifacts and does not transform them, so no additional release smoke step is required yet.
+
 Local build commands:
 - `python -m maturin build --manifest-path rust/video_core/Cargo.toml --features extension-module --out rust/video_core/dist`
 - `python -m pip install --force-reinstall rust/video_core/dist/video_core-0.1.0-cp311-cp311-macosx_11_0_arm64.whl`
 
+Verification:
+- `ruby -e 'require "yaml"; YAML.load_file(".github/workflows/build.yml")'`: passed.
+- `python -m py_compile main.py scripts/smoke_package.py src/core/queue_core.py src/core/queue_manager.py`: passed.
+- `compile(Path("VideoDownloader.spec").read_text(), "VideoDownloader.spec", "exec")`: passed.
+- `python main.py --smoke-native-core`: passed.
+- `python scripts/smoke_package.py /bin/echo`: passed.
+- `cargo fmt --manifest-path rust/video_core/Cargo.toml --check`: passed.
+- `cargo test --manifest-path rust/video_core/Cargo.toml`: 20 passed.
+- `QT_QPA_PLATFORM=offscreen pytest -q`: 93 passed.
+
+## Phase 7: Profiling And Hotspot Selection
+
+Status:
+- Phase 7A completed: lightweight profiling hooks are available around high-latency paths.
+- Phase 7B completed: profiling can emit ranked summaries and JSON reports after app exit.
+- Phase 7C completed: profiling reports can be analyzed to separate Rust candidates from external-bound work.
+- Phase 7D completed: local app startup and realistic ingest/export profiling flow were run successfully.
+
+Scope:
+- Measure real latency before porting more code to Rust.
+- Keep profiling disabled by default and controlled by environment variables.
+- Focus first on paths the user actually feels: metadata extraction, downloads, media ingestion, export planning/rendering, and queue handlers.
+
+Acceptance criteria:
+- Profiling adds negligible overhead when disabled.
+- Profiling can be enabled without starting a different app mode.
+- Collected events identify the next Rust target from measured hotspots, not guesses.
+
+Completed in Phase 7A:
+- Added `src/core/profiling.py` with `profile_scope`, a thread-safe collector, summaries, thresholded logging, and env toggles.
+- Added profiling around YouTube/generic metadata extraction and audio/video download attempts.
+- Added profiling around media probe, ffprobe, thumbnail, waveform, and proxy generation.
+- Added profiling around export preparation, FFmpeg render execution, and queue task handler execution.
+- Added tests for disabled/enabled profiling behavior, summary ordering, and env parsing.
+
+Completed in Phase 7B:
+- Added profile report generation with event count, ranked summary, raw events, and optional JSON output.
+- Added app-exit report emission through `QApplication.aboutToQuit` after queue shutdown.
+- Added `VIDEO_TOOL_PROFILE_OUTPUT` support for writing profiling reports to disk.
+- Added tests for report generation, JSON writing, and configured app-exit emission.
+
+Completed in Phase 7C:
+- Added `src/core/profile_analysis.py` to classify profile hotspots as Rust candidates, external-bound work, broad inspection scopes, or unknown.
+- Added `scripts/analyze_profile_report.py` to print ranked hotspot tables and explicit Rust-candidate recommendations from a JSON report.
+- Added tests for event classification, report loading, hotspot ordering, and table formatting.
+
+Completed in Phase 7D:
+- Ran local app startup smoke with `QT_QPA_PLATFORM=offscreen`; `MainWindow` initialized and exited cleanly.
+- Ran a realistic local flow: generated a 2-second FFmpeg source video, ingested it, generated thumbnail/waveform, exported at `speed=1.25` with original resolution/FPS and burned subtitle.
+- Verified exported video resolution stayed `320x240`, render completed with progress `100`, and output duration was about `1.65s`.
+- Found and fixed short-video thumbnail generation: seek no longer starts at `00:00:05.000` when media duration is shorter.
+- Adjusted hotspot classification so broad `media_ingestion.probe_file` is `inspect` instead of an immediate Rust candidate.
+- Current real-flow analyzer result: only `export.render_prepare` is marked `rust=yes`; FFmpeg render, thumbnail, waveform, and ffprobe are external-bound.
+
+How to run profiling:
+- `VIDEO_TOOL_PROFILE=1 python main.py`
+- Optional noise control: `VIDEO_TOOL_PROFILE_THRESHOLD_MS=100 VIDEO_TOOL_PROFILE=1 python main.py`
+- Optional JSON report: `VIDEO_TOOL_PROFILE=1 VIDEO_TOOL_PROFILE_OUTPUT=profile_report.json python main.py`
+- Analyze report: `python scripts/analyze_profile_report.py profile_report.json`
+
+Verification:
+- `python -m py_compile src/core/profiling.py src/core/ingestion.py src/core/export/renderer.py src/core/platforms/generic.py src/core/queue_manager.py tests/test_profiling.py`: passed.
+- `QT_QPA_PLATFORM=offscreen pytest -q tests/test_profiling.py tests/test_queue_manager.py tests/test_ingestion.py tests/test_export.py tests/test_audio_download_mode.py tests/test_youtube_video_flow.py`: 17 passed.
+- `VIDEO_TOOL_PROFILE=1 VIDEO_TOOL_PROFILE_THRESHOLD_MS=0` profiling smoke: passed.
+- `python -m py_compile main.py src/core/profiling.py tests/test_profiling.py`: passed.
+- `QT_QPA_PLATFORM=offscreen pytest -q tests/test_profiling.py tests/test_queue_manager.py`: 12 passed.
+- `VIDEO_TOOL_PROFILE=1 VIDEO_TOOL_PROFILE_OUTPUT=<tmp> VIDEO_TOOL_PROFILE_THRESHOLD_MS=0` report smoke: passed.
+- `cargo fmt --manifest-path rust/video_core/Cargo.toml --check`: passed.
+- `cargo test --manifest-path rust/video_core/Cargo.toml`: 20 passed.
+- `QT_QPA_PLATFORM=offscreen pytest -q`: 99 passed.
+- `python -m py_compile src/core/profile_analysis.py scripts/analyze_profile_report.py tests/test_profile_analysis.py`: passed.
+- `QT_QPA_PLATFORM=offscreen pytest -q tests/test_profile_analysis.py tests/test_profiling.py`: 9 passed.
+- `python scripts/analyze_profile_report.py <tmp-report> --limit 5`: passed.
+- `cargo fmt --manifest-path rust/video_core/Cargo.toml --check`: passed.
+- `cargo test --manifest-path rust/video_core/Cargo.toml`: 20 passed.
+- `QT_QPA_PLATFORM=offscreen pytest -q`: 102 passed.
+- `QT_QPA_PLATFORM=offscreen` app startup smoke: passed.
+- Real local ingest/export/profile flow: passed; output `320x240`, duration about `1.65s`, progress `100`.
+- `python -m py_compile src/core/ingestion.py tests/test_ingestion.py`: passed.
+- `QT_QPA_PLATFORM=offscreen pytest -q tests/test_ingestion.py tests/test_profile_analysis.py tests/test_profiling.py`: 12 passed.
+- `python scripts/analyze_profile_report.py /tmp/video_tool_real_profile.json --limit 20`: passed.
+- `QT_QPA_PLATFORM=offscreen pytest -q`: 104 passed.
+
 ## Immediate Next Steps
 
-1. Continue Phase 5B by adding cooperative cancellation tokens for running tasks.
-2. Add CI jobs for `cargo test`, Python tests, and `maturin build`.
-3. Add PyInstaller packaging checks for the native `video_core` extension.
+1. Add narrower profiling inside `export.render_prepare` to split native planner, input plan, subtitle asset creation, audio probe, and filter graph assembly.
+2. Use that narrower report before porting any more export code to Rust.
+3. Add long-running Qt worker cancellation integration coverage when the queue test harness is safe for CI.

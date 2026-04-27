@@ -5,6 +5,7 @@ from typing import Dict, Optional
 from .logging_utils import get_logger
 from .media_io import copy_file_best_effort, remove_file_quietly, stable_file_hash
 from .media_validation import validate_media_file
+from .profiling import profile_scope
 
 logger = get_logger(__name__)
 
@@ -17,30 +18,32 @@ class MediaIngestion:
         """
         Run ffprobe to extract metadata from the file.
         """
-        validation = validate_media_file(file_path)
-        if not validation.ok:
-            logger.warning("Media validation failed for %s: %s", file_path, validation.reason)
-            return None
+        with profile_scope("media_ingestion.probe_file", path=os.path.basename(file_path)):
+            validation = validate_media_file(file_path)
+            if not validation.ok:
+                logger.warning("Media validation failed for %s: %s", file_path, validation.reason)
+                return None
 
-        cmd = [
-            "ffprobe",
-            "-v", "quiet",
-            "-print_format", "json",
-            "-show_format",
-            "-show_streams",
-            file_path
-        ]
-        
-        try:
-            result = subprocess.run(cmd, capture_output=True, text=True, check=True)
-            data = json.loads(result.stdout)
-            return self._parse_metadata(data, file_path)
-        except subprocess.CalledProcessError as e:
-            logger.warning("Error probing file %s: %s", file_path, e)
-            return None
-        except json.JSONDecodeError as e:
-            logger.warning("Error parsing ffprobe output for %s: %s", file_path, e)
-            return None
+            cmd = [
+                "ffprobe",
+                "-v", "quiet",
+                "-print_format", "json",
+                "-show_format",
+                "-show_streams",
+                file_path
+            ]
+
+            try:
+                with profile_scope("media_ingestion.ffprobe", path=os.path.basename(file_path)):
+                    result = subprocess.run(cmd, capture_output=True, text=True, check=True)
+                data = json.loads(result.stdout)
+                return self._parse_metadata(data, file_path)
+            except subprocess.CalledProcessError as e:
+                logger.warning("Error probing file %s: %s", file_path, e)
+                return None
+            except json.JSONDecodeError as e:
+                logger.warning("Error parsing ffprobe output for %s: %s", file_path, e)
+                return None
 
     def _parse_metadata(self, data: Dict, file_path: str) -> Dict:
         """
@@ -67,7 +70,7 @@ class MediaIngestion:
         codec = video_stream.get("codec_name", "unknown")
         
         # Generate Thumbnail
-        thumbnail_path = self._generate_thumbnail(file_path)
+        thumbnail_path = self._generate_thumbnail(file_path, duration=duration)
         
         # Generate Waveform (if audio exists)
         waveform_path = ""
@@ -93,7 +96,7 @@ class MediaIngestion:
             "status": "ready"
         }
 
-    def _generate_thumbnail(self, file_path: str) -> str:
+    def _generate_thumbnail(self, file_path: str, duration: float = 0.0) -> str:
         """
         Generate a thumbnail using ffmpeg with fast seeking.
         """
@@ -103,23 +106,56 @@ class MediaIngestion:
         if os.path.exists(thumbnail_path):
             return thumbnail_path
             
-        cmd = [
+        base_cmd = [
             "ffmpeg",
-            "-ss", "00:00:05.000", # Fast seek to 5s
             "-i", file_path,
             "-frames:v", "1",
-            "-vf", "scale=320:-1", # Downscale
-            "-q:v", "2", # High quality JPEG
-            "-y", # Overwrite
-            thumbnail_path
+            "-vf", "scale=320:-1",
+            "-q:v", "2",
+            "-y",
+            thumbnail_path,
         ]
         
+        seek_attempts = self._thumbnail_seek_attempts(duration)
+        last_error = None
         try:
-            subprocess.run(cmd, capture_output=True, check=True)
+            with profile_scope("media_ingestion.generate_thumbnail", path=os.path.basename(file_path)):
+                for seek_time in seek_attempts:
+                    cmd = ["ffmpeg", "-ss", seek_time, *base_cmd[1:]]
+                    try:
+                        subprocess.run(cmd, capture_output=True, check=True)
+                        return thumbnail_path
+                    except subprocess.CalledProcessError as e:
+                        last_error = e
+                        remove_file_quietly(thumbnail_path)
+                if last_error:
+                    raise last_error
             return thumbnail_path
         except subprocess.CalledProcessError as e:
             logger.warning("Error generating thumbnail for %s: %s", file_path, e)
             return ""
+
+    def _thumbnail_seek_attempts(self, duration: float = 0.0) -> list[str]:
+        try:
+            duration_value = float(duration)
+        except (TypeError, ValueError):
+            duration_value = 0.0
+
+        attempts = []
+        if duration_value > 0.0:
+            if duration_value <= 5.0:
+                safe_seek = max(0.0, min(duration_value * 0.25, duration_value - 0.1))
+                attempts.append(_format_seek_time(safe_seek))
+            else:
+                attempts.append("00:00:05.000")
+
+        attempts.extend(["00:00:00.100", "00:00:00.000"])
+
+        unique_attempts = []
+        for attempt in attempts:
+            if attempt not in unique_attempts:
+                unique_attempts.append(attempt)
+        return unique_attempts
 
     def generate_waveform(self, file_path: str) -> str:
         """
@@ -143,7 +179,8 @@ class MediaIngestion:
         ]
         
         try:
-            subprocess.run(cmd, capture_output=True, check=True)
+            with profile_scope("media_ingestion.generate_waveform", path=os.path.basename(file_path)):
+                subprocess.run(cmd, capture_output=True, check=True)
             return waveform_path
         except subprocess.CalledProcessError as e:
             logger.warning("Error generating waveform for %s: %s", file_path, e)
@@ -190,7 +227,8 @@ class MediaIngestion:
         ]
 
         try:
-            subprocess.run(cmd, capture_output=True, text=True, check=True)
+            with profile_scope("media_ingestion.generate_proxy", path=os.path.basename(file_path)):
+                subprocess.run(cmd, capture_output=True, text=True, check=True)
             os.replace(temp_output, output_path)
             logger.info("Generated proxy video: %s", output_path)
             return output_path
@@ -209,3 +247,15 @@ class MediaIngestion:
                 f.write("Proxy Data")
 
         return output_path
+
+
+def _format_seek_time(seconds: float) -> str:
+    safe_seconds = max(0.0, float(seconds))
+    whole_seconds = int(safe_seconds)
+    milliseconds = int(round((safe_seconds - whole_seconds) * 1000))
+    if milliseconds >= 1000:
+        whole_seconds += 1
+        milliseconds = 0
+    hours, remainder = divmod(whole_seconds, 3600)
+    minutes, seconds_value = divmod(remainder, 60)
+    return f"{hours:02d}:{minutes:02d}:{seconds_value:02d}.{milliseconds:03d}"

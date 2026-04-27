@@ -4,6 +4,7 @@ import sys
 from typing import List, Dict, Optional, Tuple
 from PyQt6.QtCore import QObject, pyqtSignal
 from ..logging_utils import get_logger
+from ..profiling import profile_scope
 from .command_plan import build_output_command_plan
 from .filter_graph import build_filter_graph
 from .input_plan import build_input_asset_plan
@@ -87,7 +88,14 @@ class RenderEngine(QObject):
             return
 
         try:
-            cmd, concat_file, temp_files = self._build_ffmpeg_command(timeline_clips, output_path)
+            with profile_scope(
+                "export.render_prepare",
+                clip_count=len(timeline_clips),
+                sticker_count=len(self.stickers),
+                subtitle_count=len(self.subtitles),
+                audio_count=len(self.audio_tracks),
+            ):
+                cmd, concat_file, temp_files = self._build_ffmpeg_command(timeline_clips, output_path)
         except Exception as e:
             self.render_finished.emit(False, f"Failed to build FFmpeg command: {e}")
             return
@@ -98,23 +106,28 @@ class RenderEngine(QObject):
         def run_render():
             try:
                 # Start ffmpeg process
-                process = subprocess.Popen(
-                    cmd,
-                    stdout=subprocess.PIPE,
-                    stderr=subprocess.PIPE,
-                    text=True,
-                )
+                with profile_scope(
+                    "export.ffmpeg_render",
+                    clip_count=len(timeline_clips),
+                    has_filters="-filter_complex" in cmd,
+                ):
+                    process = subprocess.Popen(
+                        cmd,
+                        stdout=subprocess.PIPE,
+                        stderr=subprocess.PIPE,
+                        text=True,
+                    )
 
-                # Simple progress simulation while ffmpeg runs
-                progress = 0
-                while True:
-                    if process.poll() is not None:
-                        break
-                    progress = min(progress + 2, 95)
-                    self.progress_updated.emit(progress)
-                    time.sleep(0.1)
+                    # Simple progress simulation while ffmpeg runs
+                    progress = 0
+                    while True:
+                        if process.poll() is not None:
+                            break
+                        progress = min(progress + 2, 95)
+                        self.progress_updated.emit(progress)
+                        time.sleep(0.1)
 
-                stdout, stderr = process.communicate()
+                    stdout, stderr = process.communicate()
                 if process.returncode == 0 and os.path.exists(output_path):
                     self.progress_updated.emit(100)
                     self.render_finished.emit(True, "Render completed successfully!")

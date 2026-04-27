@@ -44,6 +44,11 @@ echo 📦 Installing dependencies...
 pip install -r requirements.txt
 pip install pyinstaller
 
+echo 🦀 Building native Rust core...
+python -m maturin build --manifest-path rust/video_core/Cargo.toml --features extension-module --out rust/video_core/dist
+for %%f in (rust\video_core\dist\video_core-*.whl) do python -m pip install --force-reinstall "%%f"
+python main.py --smoke-native-core
+
 REM Build with PyInstaller
 echo 🔨 Building app...
 pyinstaller --name "VideoEditor" ^
@@ -66,16 +71,19 @@ pyinstaller --name "VideoEditor" ^
     --hidden-import "deep_translator" ^
     --hidden-import "edge_tts" ^
     --hidden-import "whisper" ^
+    --hidden-import "video_core" ^
     --exclude-module "matplotlib" ^
     --exclude-module "pandas" ^
     --exclude-module "jupyter" ^
     --noconfirm ^
     main.py
 
+python scripts\smoke_package.py dist\VideoEditor.exe
+
 echo.
 echo ✅ Build complete!
 echo 📁 Exe location: dist\VideoEditor.exe
 echo.
 echo To run: double-click dist\VideoEditor.exe
-pausecho To distribute: zip the VideoEditor.exe file
+echo To distribute: zip the VideoEditor.exe file
 pause

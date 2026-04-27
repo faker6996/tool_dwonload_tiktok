@@ -38,6 +38,11 @@ echo "📦 Installing dependencies..."
 pip install -r requirements.txt
 pip install pyinstaller
 
+echo "🦀 Building native Rust core..."
+python -m maturin build --manifest-path rust/video_core/Cargo.toml --features extension-module --out rust/video_core/dist
+python -m pip install --force-reinstall rust/video_core/dist/video_core-*.whl
+python main.py --smoke-native-core
+
 # Build with PyInstaller (including FFmpeg binary)
 echo "🔨 Building app..."
 pyinstaller --name "VideoEditor" \
@@ -63,11 +68,14 @@ pyinstaller --name "VideoEditor" \
     --hidden-import "mlx_whisper" \
     --hidden-import "whisper" \
     --hidden-import "openai" \
+    --hidden-import "video_core" \
     --exclude-module "matplotlib" \
     --exclude-module "pandas" \
     --exclude-module "jupyter" \
     --noconfirm \
     main.py
+
+python scripts/smoke_package.py dist/VideoEditor.app/Contents/MacOS/VideoEditor
 
 echo ""
 echo "✅ Build complete!"

@@ -2,17 +2,19 @@
 Queue Manager - Background Task Processing System
 Handles download, translate, remove sub, and export tasks without blocking UI.
 """
+import inspect
 import time
 from typing import Optional, List, Dict, Callable
 from PyQt6.QtCore import QObject, QThread, pyqtSignal, QMutex, QWaitCondition
 from .logging_utils import get_logger
+from .profiling import profile_scope
 from .queue_core import (
     QueueTask,
     TaskStatus,
     TaskType,
-    cancel_pending_task,
     claim_next_pending_task,
     clear_terminal_tasks,
+    request_task_cancellation,
     task_status_counts,
     transition_task,
     update_task_progress,
@@ -26,6 +28,7 @@ class QueueWorker(QThread):
     task_started = pyqtSignal(str)  # task_id
     task_progress = pyqtSignal(str, int)  # task_id, progress
     task_completed = pyqtSignal(str)  # task_id
+    task_cancelled = pyqtSignal(str)  # task_id
     task_failed = pyqtSignal(str, str)  # task_id, error
     
     def __init__(self, queue_manager: 'QueueManager'):
@@ -99,7 +102,21 @@ class QueueWorker(QThread):
                 self.task_progress.emit(task.id, progress)
             
             # Run the handler
-            handler(task.data, progress_callback)
+            with profile_scope(
+                "queue.process_task",
+                task_type=task.task_type.value,
+                title=task.title,
+            ):
+                self._call_handler(handler, task, progress_callback)
+
+            if task.cancellation_token.is_cancelled() or task.status == TaskStatus.CANCELLED:
+                transition_task(
+                    task,
+                    TaskStatus.CANCELLED,
+                    error=task.cancellation_token.reason or "cancelled",
+                )
+                self.task_cancelled.emit(task.id)
+                return
             
             transition_task(task, TaskStatus.COMPLETED)
             self.task_completed.emit(task.id)
@@ -107,6 +124,29 @@ class QueueWorker(QThread):
         except Exception as e:
             transition_task(task, TaskStatus.FAILED, error=str(e))
             self.task_failed.emit(task.id, str(e))
+
+    def _call_handler(self, handler: Callable, task: QueueTask, progress_callback: Callable):
+        if _handler_accepts_cancellation_token(handler):
+            return handler(task.data, progress_callback, task.cancellation_token)
+        return handler(task.data, progress_callback)
+
+
+def _handler_accepts_cancellation_token(handler: Callable) -> bool:
+    try:
+        signature = inspect.signature(handler)
+    except (TypeError, ValueError):
+        return False
+
+    positional_count = 0
+    for parameter in signature.parameters.values():
+        if parameter.kind == inspect.Parameter.VAR_POSITIONAL:
+            return True
+        if parameter.kind in (
+            inspect.Parameter.POSITIONAL_ONLY,
+            inspect.Parameter.POSITIONAL_OR_KEYWORD,
+        ):
+            positional_count += 1
+    return positional_count >= 3
 
 
 class QueueManager(QObject):
@@ -139,6 +179,7 @@ class QueueManager(QObject):
             worker.task_started.connect(self._on_task_started)
             worker.task_progress.connect(self._on_task_progress)
             worker.task_completed.connect(self._on_task_completed)
+            worker.task_cancelled.connect(self._on_task_cancelled)
             worker.task_failed.connect(self._on_task_failed)
             if self._is_paused:
                 worker.pause()
@@ -196,9 +237,9 @@ class QueueManager(QObject):
         return self._tasks.copy()
     
     def cancel_task(self, task_id: str) -> bool:
-        """Cancel a pending task."""
+        """Cancel a pending task or request cooperative cancellation for a running task."""
         task = self.get_task(task_id)
-        if task and cancel_pending_task(task):
+        if task and request_task_cancellation(task):
             self.task_updated.emit(task)
             return True
         return False
@@ -249,6 +290,11 @@ class QueueManager(QObject):
             self.task_updated.emit(task)
     
     def _on_task_completed(self, task_id: str):
+        task = self.get_task(task_id)
+        if task:
+            self.task_updated.emit(task)
+
+    def _on_task_cancelled(self, task_id: str):
         task = self.get_task(task_id)
         if task:
             self.task_updated.emit(task)
