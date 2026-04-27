@@ -17,38 +17,50 @@ class Timeline(QFrame):
         
         # Header
         header_container = QWidget()
+        header_container.setObjectName("timelineHeader")
+        header_container.setFixedHeight(44)
+        header_container.setStyleSheet("""
+            QWidget#timelineHeader {
+                background-color: #18181c;
+                border-bottom: 1px solid #2c2c35;
+            }
+            QLabel#timelineTitle {
+                color: #f4f4f5;
+                font-weight: 700;
+                font-size: 12px;
+            }
+            QLabel#aiToolsLabel {
+                color: #9ca3af;
+                font-weight: 600;
+                font-size: 12px;
+            }
+        """)
         header_layout = QHBoxLayout(header_container)
-        header_layout.setContentsMargins(0, 0, 0, 0)
+        header_layout.setContentsMargins(14, 0, 14, 0)
+        header_layout.setSpacing(10)
         
         title = QLabel("Timeline")
-        title.setObjectName("panel_title")
+        title.setObjectName("timelineTitle")
         header_layout.addWidget(title)
         
         # AI Tools Section
         ai_label = QLabel("AI Tools:")
-        ai_label.setStyleSheet("color: #8b9dc3; margin-left: 10px;")
+        ai_label.setObjectName("aiToolsLabel")
         header_layout.addWidget(ai_label)
         
         # Auto Sub Button (combines Generate + Remove subtitle features)
         self.caption_btn = QPushButton("📝 Auto Sub")
         self.caption_btn.setObjectName("primary")
         self.caption_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.caption_btn.setFixedHeight(30)
         self.caption_btn.clicked.connect(self.open_caption_dialog)
         header_layout.addWidget(self.caption_btn)
         
         # TTS Button
         self.tts_btn = QPushButton("🎤 Text to Speech")
+        self.tts_btn.setObjectName("secondary")
         self.tts_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.tts_btn.setStyleSheet("""
-            QPushButton {
-                background-color: #2C2C2C;
-                border: 1px solid #3E3E3E;
-            }
-            QPushButton:hover {
-                background-color: #3E3E3E;
-                border-color: #505050;
-            }
-        """)
+        self.tts_btn.setFixedHeight(30)
         self.tts_btn.clicked.connect(self.open_tts_dialog)
         header_layout.addWidget(self.tts_btn)
         

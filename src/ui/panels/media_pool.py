@@ -28,7 +28,7 @@ class AssetItemWidget(QWidget):
 
         # Thumbnail container (button overlays top-right of the image)
         self.thumb_container = QFrame()
-        self.thumb_container.setStyleSheet("background-color: #27272a; border-radius: 5px;")
+        self.thumb_container.setStyleSheet("background-color: #24242c; border-radius: 8px;")
         self.thumb_container.setMinimumHeight(90)
         self.thumb_container.setFixedHeight(90)
         thumb_layout = QVBoxLayout(self.thumb_container)
@@ -73,7 +73,7 @@ class AssetItemWidget(QWidget):
         # Name label
         name_label = QLabel(name)
         name_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        name_label.setStyleSheet("color: #e5e5e5; font-size: 11px;")
+        name_label.setStyleSheet("color: #e5e7eb; font-size: 11px;")
         name_label.setWordWrap(True)
         name_label.setMaximumHeight(30)
         layout.addWidget(name_label)
@@ -148,50 +148,73 @@ class MediaPool(QWidget):
         
         # --- Header (Import & Search) ---
         header_container = QWidget()
-        header_container.setStyleSheet("background-color: #18181b; border-bottom: 1px solid #27272a;")
+        header_container.setStyleSheet("background-color: #18181c; border-bottom: 1px solid #2c2c35;")
         header_layout = QVBoxLayout(header_container)
-        header_layout.setContentsMargins(10, 10, 10, 10)
+        header_layout.setContentsMargins(12, 12, 12, 12)
         header_layout.setSpacing(10)
         
         # Import Button
         self.import_btn = QPushButton("Import Media")
         self.import_btn.setObjectName("primary")
         self.import_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.import_btn.setFixedHeight(36)
+        self.import_btn.setFixedHeight(38)
         self.import_btn.clicked.connect(self.open_file_dialog) # Connect to existing open_file_dialog
         header_layout.addWidget(self.import_btn)
         
         # Search Input
         self.search_input = QLineEdit()
-        self.search_input.setPlaceholderText("Search assets...")
+        self.search_input.setPlaceholderText("Search assets…")
+        self.search_input.setMinimumHeight(34)
         self.search_input.textChanged.connect(self.filter_assets)
         header_layout.addWidget(self.search_input)
 
         # Stock Search (compatibility with existing tests/workflows)
-        stock_search_row = QHBoxLayout()
-        stock_search_row.setSpacing(8)
+        stock_container = QWidget()
+        stock_container.setObjectName("stockSearchCard")
+        stock_container.setStyleSheet("""
+            QWidget#stockSearchCard {
+                background-color: #141419;
+                border: 1px solid #2c2c35;
+                border-radius: 9px;
+            }
+        """)
+        stock_layout = QVBoxLayout(stock_container)
+        stock_layout.setContentsMargins(8, 8, 8, 8)
+        stock_layout.setSpacing(8)
+
         self.stock_search_input = QLineEdit()
-        self.stock_search_input.setPlaceholderText("Search stock media...")
+        self.stock_search_input.setPlaceholderText("Search stock media…")
+        self.stock_search_input.setMinimumHeight(32)
         self.stock_search_input.returnPressed.connect(self.search_stock)
-        self.stock_search_btn = QPushButton("Search Stock")
+        stock_layout.addWidget(self.stock_search_input)
+
+        stock_search_row = QHBoxLayout()
+        stock_search_row.setSpacing(6)
+        self.stock_search_btn = QPushButton("Search")
+        self.stock_search_btn.setObjectName("secondary")
         self.stock_search_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.stock_search_btn.setMinimumHeight(30)
         self.stock_search_btn.clicked.connect(self.search_stock)
-        self.import_stock_btn = QPushButton("Import Selected")
+        self.import_stock_btn = QPushButton("Import")
+        self.import_stock_btn.setObjectName("secondary")
         self.import_stock_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.import_stock_btn.setMinimumHeight(30)
         self.import_stock_btn.clicked.connect(self.import_selected_stock)
         self.cancel_stock_btn = QPushButton("Cancel")
+        self.cancel_stock_btn.setObjectName("ghost")
         self.cancel_stock_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.cancel_stock_btn.setMinimumHeight(30)
         self.cancel_stock_btn.clicked.connect(self.cancel_stock_download)
         self.cancel_stock_btn.setEnabled(False)
-        stock_search_row.addWidget(self.stock_search_input)
-        stock_search_row.addWidget(self.stock_search_btn)
-        stock_search_row.addWidget(self.import_stock_btn)
+        stock_search_row.addWidget(self.stock_search_btn, 1)
+        stock_search_row.addWidget(self.import_stock_btn, 1)
         stock_search_row.addWidget(self.cancel_stock_btn)
-        header_layout.addLayout(stock_search_row)
+        stock_layout.addLayout(stock_search_row)
 
         self.stock_status_label = QLabel(self._last_stock_status)
         self.stock_status_label.setStyleSheet("color: #a1a1aa; font-size: 11px;")
-        header_layout.addWidget(self.stock_status_label)
+        stock_layout.addWidget(self.stock_status_label)
+        header_layout.addWidget(stock_container)
         
         layout.addWidget(header_container)
         
@@ -207,23 +230,25 @@ class MediaPool(QWidget):
         self.asset_list.setDragEnabled(True)
         self.asset_list.setStyleSheet("""
             QListWidget {
-                background-color: #18181b;
+                background-color: #18181c;
                 border: none;
-                padding: 10px;
+                padding: 12px;
             }
             QListWidget::item {
-                background-color: #27272a;
-                border-radius: 5px;
+                background-color: #22222a;
+                border: 1px solid #2c2c35;
+                border-radius: 8px;
                 color: #a1a1aa;
-                padding: 5px;
+                padding: 6px;
                 text-align: center;
             }
             QListWidget::item:selected {
-                background-color: #3f3f46;
+                background-color: rgba(109, 93, 252, 0.16);
+                border: 1px solid #6d5dfc;
                 color: white;
             }
             QListWidget::item:hover {
-                background-color: #3f3f46;
+                background-color: #2c2c35;
             }
         """)
         
@@ -234,8 +259,8 @@ class MediaPool(QWidget):
         self.stock_list.itemDoubleClicked.connect(self.import_stock_item)
         self.stock_list.setStyleSheet("""
             QListWidget {
-                background-color: #111111;
-                border-top: 1px solid #27272a;
+                background-color: #111116;
+                border-top: 1px solid #2c2c35;
                 border-left: none;
                 border-right: none;
                 border-bottom: none;

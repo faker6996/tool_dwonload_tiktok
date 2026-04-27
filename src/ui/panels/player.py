@@ -727,19 +727,61 @@ class Player(QFrame):
         
         # --- Bottom Control Bar ---
         controls = QWidget()
-        controls.setFixedHeight(48)
-        controls.setStyleSheet("background-color: #18181b; border-top: 1px solid #27272a;")
+        controls.setFixedHeight(54)
+        controls.setObjectName("playerControls")
+        controls.setStyleSheet("""
+            QWidget#playerControls {
+                background-color: #18181c;
+                border-top: 1px solid #2c2c35;
+            }
+            QPushButton#playerControlButton {
+                background-color: #25252d;
+                border: 1px solid #383844;
+                border-radius: 8px;
+                color: #f4f4f5;
+                font-size: 13px;
+                font-weight: 700;
+                padding: 0;
+            }
+            QPushButton#playerControlButton:hover {
+                background-color: #30303a;
+                border-color: #4b4b58;
+            }
+            QPushButton#zoomButton {
+                background-color: transparent;
+                border: 1px solid #383844;
+                border-radius: 7px;
+                color: #a7a7b2;
+                font-weight: 700;
+                padding: 0;
+            }
+            QPushButton#zoomButton:hover {
+                background-color: #25252d;
+                color: #f4f4f5;
+            }
+            QLabel#timecode {
+                color: #8b7cff;
+                font-weight: 700;
+            }
+            QLabel#duration {
+                color: #71717a;
+            }
+            QLabel#speedLabel {
+                color: #a7a7b2;
+            }
+        """)
         controls_layout = QHBoxLayout(controls)
         controls_layout.setContentsMargins(16, 0, 16, 0)
-        controls_layout.setSpacing(16)
+        controls_layout.setSpacing(8)
         
         # Playback Controls
-        self.btn_prev = QPushButton("⏮")
+        self.btn_prev = QPushButton("‹")
         self.btn_play = QPushButton("▶")
         self.btn_play.clicked.connect(self.toggle_playback)
-        self.btn_next = QPushButton("⏭")
+        self.btn_next = QPushButton("›")
         
         for btn in [self.btn_prev, self.btn_play, self.btn_next]:
+            btn.setObjectName("playerControlButton")
             btn.setFixedSize(28, 28)
             btn.setCursor(Qt.CursorShape.PointingHandCursor)
             
@@ -749,28 +791,33 @@ class Player(QFrame):
         
         # Timecode
         self.timecode_label = QLabel("00:00:00:00")
-        self.timecode_label.setStyleSheet("font-family: 'JetBrains Mono', monospace; color: #6366f1; font-weight: 600;")
+        self.timecode_label.setObjectName("timecode")
+        self.timecode_label.setFixedWidth(78)
+        self.timecode_label.setStyleSheet("font-family: 'Arial'; font-weight: 700;")
         controls_layout.addWidget(self.timecode_label)
         
         # Scrubber (Progress)
         self.scrubber = QSlider(Qt.Orientation.Horizontal)
         self.scrubber.setRange(0, 1000)
         self.scrubber.setValue(0)
+        self.scrubber.setMinimumWidth(80)
         self.scrubber.sliderMoved.connect(self.set_position)
         controls_layout.addWidget(self.scrubber)
         
         # Duration
         self.duration_label = QLabel("00:00:00:00")
-        self.duration_label.setStyleSheet("font-family: 'JetBrains Mono', monospace; color: #71717a;")
+        self.duration_label.setObjectName("duration")
+        self.duration_label.setFixedWidth(78)
+        self.duration_label.setStyleSheet("font-family: 'Arial';")
         controls_layout.addWidget(self.duration_label)
 
         # Playback Speed (preview only)
         speed_label = QLabel("Speed:")
-        speed_label.setStyleSheet("color: #a1a1aa;")
+        speed_label.setObjectName("speedLabel")
         controls_layout.addWidget(speed_label)
 
         self.playback_rate_combo = BoundedComboBox()
-        self.playback_rate_combo.setFixedWidth(90)
+        self.playback_rate_combo.setFixedWidth(96)
         self.playback_rate_combo.setCursor(Qt.CursorShape.PointingHandCursor)
         self.playback_rate_combo.setToolTip("Playback speed (preview only)")
         self.playback_rate_combo.addItem("0.5x", 0.5)
@@ -788,21 +835,23 @@ class Player(QFrame):
         zoom_layout.setSpacing(4)
         
         btn_zoom_out = QPushButton("-")
+        btn_zoom_out.setObjectName("zoomButton")
         btn_zoom_out.setFixedSize(24, 24)
         btn_zoom_out.clicked.connect(lambda: self.zoom_slider.setValue(self.zoom_slider.value() - 10))
         
         self.zoom_slider = QSlider(Qt.Orientation.Horizontal)
-        self.zoom_slider.setFixedWidth(80)
+        self.zoom_slider.setFixedWidth(54)
         self.zoom_slider.setRange(10, 200)
         self.zoom_slider.setValue(100)
         self.zoom_slider.valueChanged.connect(self.set_zoom)
+        self.zoom_slider.hide()
         
         btn_zoom_in = QPushButton("+")
+        btn_zoom_in.setObjectName("zoomButton")
         btn_zoom_in.setFixedSize(24, 24)
         btn_zoom_in.clicked.connect(lambda: self.zoom_slider.setValue(self.zoom_slider.value() + 10))
         
         zoom_layout.addWidget(btn_zoom_out)
-        zoom_layout.addWidget(self.zoom_slider)
         zoom_layout.addWidget(btn_zoom_in)
         
         controls_layout.addLayout(zoom_layout)

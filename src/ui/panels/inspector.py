@@ -61,6 +61,7 @@ class Inspector(QFrame):
         self.setMinimumWidth(300)
         self.current_clip = None
         self.setup_ui()
+        self.set_clip(None)
 
     def setup_ui(self):
         main_layout = QVBoxLayout(self)
@@ -84,6 +85,19 @@ class Inspector(QFrame):
         self.content_layout.setContentsMargins(16, 16, 16, 16)
         self.content_layout.setSpacing(24)
         self.content_layout.setAlignment(Qt.AlignmentFlag.AlignTop)
+
+        self.empty_hint = QLabel("Select a clip to edit transform, opacity, and audio.")
+        self.empty_hint.setWordWrap(True)
+        self.empty_hint.setStyleSheet("""
+            QLabel {
+                color: #71717a;
+                background-color: #141419;
+                border: 1px solid #2c2c35;
+                border-radius: 8px;
+                padding: 10px;
+            }
+        """)
+        self.content_layout.addWidget(self.empty_hint)
 
         # 1. TRANSFORM Section
         self.create_section_header("TRANSFORM")
@@ -245,9 +259,12 @@ class Inspector(QFrame):
     def set_clip(self, clip):
         self.current_clip = clip
         enabled = clip is not None
-        self.setEnabled(enabled)
+        if hasattr(self, "empty_hint"):
+            self.empty_hint.setVisible(not enabled)
         if hasattr(self, "content_widget"):
             self.content_widget.setEnabled(enabled)
+        if hasattr(self, "empty_hint"):
+            self.empty_hint.setEnabled(True)
         
         if not clip:
             return

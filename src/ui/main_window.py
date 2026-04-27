@@ -29,15 +29,22 @@ class MainWindow(QMainWindow):
 
         # --- Top Bar ---
         self.top_bar = QFrame()
-        self.top_bar.setFixedHeight(50)
-        self.top_bar.setStyleSheet("background-color: #18181b; border-bottom: 1px solid #27272a;")
+        self.top_bar.setObjectName("topBar")
+        self.top_bar.setFixedHeight(56)
+        self.top_bar.setStyleSheet("""
+            QFrame#topBar {
+                background-color: #18181c;
+                border-bottom: 1px solid #2c2c35;
+            }
+        """)
         
         top_bar_layout = QHBoxLayout(self.top_bar)
-        top_bar_layout.setContentsMargins(16, 0, 16, 0)
+        top_bar_layout.setContentsMargins(18, 0, 18, 0)
+        top_bar_layout.setSpacing(12)
         
         # Title
         self.title_label = QLabel("Universal Video Downloader")
-        self.title_label.setStyleSheet("font-weight: 600; font-size: 14px; color: #e5e5e5;")
+        self.title_label.setStyleSheet("font-weight: 700; font-size: 14px; color: #f4f4f5;")
         top_bar_layout.addWidget(self.title_label)
         
         top_bar_layout.addStretch()
@@ -55,12 +62,14 @@ class MainWindow(QMainWindow):
         self.queue_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self.queue_btn.setStyleSheet("""
             QPushButton {
-                background: #27272a;
-                border-radius: 8px;
+                background: #25252d;
+                border: 1px solid #383844;
+                border-radius: 10px;
                 font-size: 16px;
             }
             QPushButton:hover {
-                background: #3f3f46;
+                background: #30303a;
+                border-color: #4b4b58;
             }
         """)
         self.queue_btn.clicked.connect(self._toggle_queue_panel)
@@ -77,7 +86,7 @@ class MainWindow(QMainWindow):
                 font-size: 11px;
                 font-weight: bold;
                 border-radius: 10px;
-                border: 2px solid #18181b;
+                border: 2px solid #18181c;
             }
         """)
         self.queue_stats.setAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -94,26 +103,7 @@ class MainWindow(QMainWindow):
         self.export_btn = QPushButton("Export Video")
         self.export_btn.setObjectName("primary")
         self.export_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.export_btn.setStyleSheet("""
-            QPushButton#primary {
-                background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
-                                            stop:0 #8a2be2, stop:1 #4b0082);
-                color: white;
-                font-weight: bold;
-                padding: 8px 20px;
-                border-radius: 6px;
-                border: none;
-                font-size: 13px;
-            }
-            QPushButton:hover {
-                background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
-                                            stop:0 #6bb4ff, stop:1 #9d6fff);
-            }
-            QPushButton:pressed {
-                background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
-                                            stop:0 #4a8fd9, stop:1 #7645d9);
-            }
-        """)
+        self.export_btn.setFixedHeight(34)
         self.export_btn.clicked.connect(self.on_export_clicked)
         self.export_btn.hide() # Hidden by default
         top_bar_layout.addWidget(self.export_btn)
@@ -128,12 +118,18 @@ class MainWindow(QMainWindow):
         
         # 1. Left Navigation (Fixed Width)
         self.nav_bar = QFrame()
-        self.nav_bar.setFixedWidth(80)
-        self.nav_bar.setStyleSheet("background-color: #18181b; border-right: 1px solid #27272a;")
+        self.nav_bar.setObjectName("navBar")
+        self.nav_bar.setFixedWidth(84)
+        self.nav_bar.setStyleSheet("""
+            QFrame#navBar {
+                background-color: #151519;
+                border-right: 1px solid #2c2c35;
+            }
+        """)
         
         nav_layout = QVBoxLayout(self.nav_bar)
-        nav_layout.setContentsMargins(0, 10, 0, 10)
-        nav_layout.setSpacing(10)
+        nav_layout.setContentsMargins(0, 12, 0, 12)
+        nav_layout.setSpacing(8)
         
         self.nav_group = QButtonGroup(self)
         self.nav_group.setExclusive(True)
@@ -171,9 +167,10 @@ class MainWindow(QMainWindow):
 
     def add_nav_item(self, layout, icon_name, tooltip, id, checked=False):
         btn = QToolButton()
-        btn.setFixedSize(60, 60)
+        btn.setFixedSize(56, 56)
+        btn.setObjectName("navItem")
         btn.setIcon(qta.icon(f"fa5s.{icon_name}", color="#a1a1aa"))
-        btn.setIconSize(QSize(24, 24))
+        btn.setIconSize(QSize(22, 22))
         btn.setToolTip(tooltip)
         btn.setCheckable(True)
         btn.setChecked(checked)
@@ -183,14 +180,16 @@ class MainWindow(QMainWindow):
         btn.setStyleSheet("""
             QToolButton {
                 background: transparent;
-                border: none;
-                border-radius: 8px;
+                border: 1px solid transparent;
+                border-radius: 12px;
             }
             QToolButton:hover {
-                background-color: rgba(255, 255, 255, 0.05);
+                background-color: rgba(255, 255, 255, 0.06);
+                border-color: #2c2c35;
             }
             QToolButton:checked {
-                background-color: rgba(79, 70, 229, 0.1);
+                background-color: rgba(109, 93, 252, 0.18);
+                border-color: rgba(109, 93, 252, 0.35);
             }
         """)
         
